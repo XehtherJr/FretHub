@@ -37,7 +37,7 @@ const SEVENTH_SIGNATURES: Record<string, string> = {
 const ROMAN_MAJOR = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'];
 const ROMAN_MINOR = ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII'];
 const FUNCTIONS_MAJOR: DiatonicChord['function'][] = [
-  'tonic', 'tonic', 'tonic', 'subdominant', 'dominant', 'tonic', 'dominant',
+  'tonic', 'subdominant', 'tonic', 'subdominant', 'dominant', 'tonic', 'dominant',
 ];
 const FUNCTIONS_MINOR: DiatonicChord['function'][] = [
   'tonic', 'subdominant', 'tonic', 'subdominant', 'dominant', 'subdominant', 'dominant',

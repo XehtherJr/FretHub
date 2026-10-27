@@ -76,13 +76,13 @@ export function identifyChord(pcs: number[], bassPc?: number): ChordMatch[] {
 }
 
 /** Human-readable explanation of why a match fits, for UI tooltips. */
-export function describeMatch(match: ChordMatch): string {
+export function describeMatch(match: ChordMatch, preferFlats = false): string {
   const parts = [
     `Notes: ${match.chord.tones.map((t) => t.name).join(' – ')}`,
     `Formula: ${match.chord.formula.join(' ')}`,
   ];
   if (match.strength === 'partial') {
-    const names = match.missingPcs.map((pc) => pcToNote(pc)).join(', ');
+    const names = match.missingPcs.map((pc) => pcToNote(pc, preferFlats)).join(', ');
     parts.push(`Omits optional tone(s): ${names}`);
   }
   if (match.chord.isInversion) {

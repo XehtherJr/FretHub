@@ -4,7 +4,7 @@
  */
 
 import { normalizePc, noteToPc, pcToNote, NoteName } from './notes';
-import { intervalSemitones, getInterval } from './intervals';
+import { intervalSemitones, getInterval, spellInterval } from './intervals';
 
 export type ScaleCategory = 'major' | 'minor' | 'mode' | 'pentatonic' | 'blues' | 'symmetrical';
 
@@ -145,13 +145,13 @@ export function buildScale(root: NoteName | number, scaleId: string): ScaleNote[
   const type = SCALE_TYPES.find((s) => s.id === scaleId);
   if (!type) throw new Error(`Unknown scale: "${scaleId}"`);
   const rootPc = typeof root === 'number' ? normalizePc(root) : noteToPc(root);
-  const preferFlats = typeof root === 'string' && root.includes('b');
+  const rootName = pcToNote(rootPc, typeof root === 'string' && root.includes('b'));
   return type.intervals.map((symbol) => {
     const def = getInterval(symbol);
     const pc = normalizePc(rootPc + intervalSemitones(symbol));
     return {
       pc,
-      name: pcToNote(pc, preferFlats),
+      name: spellInterval(rootName, symbol),
       interval: symbol,
       intervalName: def.name,
       degree: def.degree,
@@ -165,14 +165,14 @@ export function buildScale(root: NoteName | number, scaleId: string): ScaleNote[
  */
 export function buildArpeggio(root: NoteName | number, intervalSymbols: string[]): ScaleNote[] {
   const rootPc = typeof root === 'number' ? normalizePc(root) : noteToPc(root);
-  const preferFlats = typeof root === 'string' && root.includes('b');
+  const rootName = pcToNote(rootPc, typeof root === 'string' && root.includes('b'));
   const notes: ScaleNote[] = [];
   for (const symbol of intervalSymbols) {
     const def = getInterval(symbol);
     const pc = normalizePc(rootPc + intervalSemitones(symbol));
     notes.push({
       pc,
-      name: pcToNote(pc, preferFlats),
+      name: spellInterval(rootName, symbol),
       interval: symbol,
       intervalName: def.name,
       degree: def.degree,
@@ -184,7 +184,7 @@ export function buildArpeggio(root: NoteName | number, intervalSymbols: string[]
     const pc = normalizePc(rootPc + intervalSemitones(symbol));
     notes.push({
       pc,
-      name: pcToNote(pc, preferFlats),
+      name: spellInterval(rootName, symbol),
       interval: `${symbol} (8va)`,
       intervalName: `${def.name} (octave up)`,
       degree: def.degree + 7,
@@ -197,4 +197,14 @@ export function getScaleType(id: string): ScaleType {
   const type = SCALE_TYPES.find((s) => s.id === id);
   if (!type) throw new Error(`Unknown scale: "${id}"`);
   return type;
+}
+
+/** The root, third and fifth actually present in a scale, for its triad overlay.
+ * Symmetrical scales can contain more than one third or fifth; in that case
+ * prefer the major third and perfect fifth. */
+export function scaleTriadIntervals(id: string): string[] {
+  const { intervals } = getScaleType(id);
+  const third = ['3', 'b3'].find((interval) => intervals.includes(interval));
+  const fifth = ['5', 'b5', '#5'].find((interval) => intervals.includes(interval));
+  return ['1', ...(third ? [third] : []), ...(fifth ? [fifth] : [])];
 }

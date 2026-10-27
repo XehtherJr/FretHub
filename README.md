@@ -1,128 +1,124 @@
-# Frethub — Guitar Chord Encyclopedia & Music Theory Platform
+# FretHub
 
-A complete, working guitar reference and learning application. It combines a comprehensive chord
-encyclopedia, an **algorithmic voicing engine** (no hardcoded chord diagrams), an interactive
-fretboard, a structured music-theory curriculum, scales/modes/arpeggios, a progression explorer,
-and practice tools. All musical calculation runs locally in the browser — no AI APIs, no backend
-required, no account needed.
+A local-first guitar reference and learning workspace: an interactive fretboard, a calculated chord
+encyclopedia, scales, progressions, hands-on theory, and practical tools. **No account is required**
+to browse, play sounds, practise, or save a library on the current device.
 
-## Features
+## What is included
 
-| Area | What is included |
+| Area | Features |
 | --- | --- |
-| **Chord encyclopedia** | 38 chord formulas × 12 roots = **456 calculated chords** across 9 families: triads, suspended, power, sixth, seventh, add, extended (9/11/13), altered dominants, quartal/special. Every entry shows notes, interval formula, theory explanation, inversions, generated voicings, fingering, tab and synthesized audio. |
-| **Voicing engine** | DFS enumeration with playability pruning, open/muted/barre handling, inversions via bass-note constraint, omittable-tone support for extended chords, four-finger fingering assignment, playability ranking and labels. Works in 13 tunings on 6/7/8-string instruments with capo. |
-| **Chord identification** | Click notes on the fretboard and every compatible chord formula is returned, ranked by exactness and bass note; partial matches (omitted fifth) are labelled honestly. |
-| **Interactive fretboard** | Real buttons for every string/fret (keyboard & screen-reader operable), scale and arpeggio overlays, tuning/capo/fret-range controls, sharp/flat spelling, note-on-click audio, deep linking from any chord. |
-| **Theory curriculum** | 12 structured lessons, beginner → advanced: notes/enharmonics, intervals, scales & keys, circle of fifths, triads, seventh chords & extensions, inversions, diatonic harmony, progressions, modes, borrowed/secondary dominants/modulation/voice leading, jazz & altered dominants. Every example links to a playable chord or scale. |
-| **Scales & arpeggios** | 17 scales/modes (major/minor/pentatonic/blues/7 modes/harmonic-minor modes/symmetrical), full-neck patterns, root-triad arpeggio overlay, ascending playback. |
-| **Progressions** | Diatonic triad & seventh tables with Roman numerals and harmonic function, 9 progression templates (pop, jazz ii–V–I, 12-bar blues, flamenco…), custom numeral builder, sequenced playback in any key. |
-| **Practice** | Chord-ID multiple-choice quiz, neck note-finder quiz (scores/streaks persisted), working metronome with accents and time signatures, microphone chromatic tuner with autocorrelation pitch detection and honest permission/unsupported states. |
-| **Personal library** | Favorites, recently viewed chords and per-chord notes via `localStorage`. |
-| **Global search** | Command palette (`/` or `Ctrl/Cmd+K`) over chords (name, symbol, notes, formula), scales and lessons, with full keyboard navigation. |
-
-## Tech stack
-
-- **React 18 + TypeScript + Vite** — SPA, typed end-to-end, strict mode.
-- **React Router v6** — multi-page navigation.
-- **Vitest + Testing Library + jsdom** — 74 tests covering engine math and rendered pages.
-- **Web Audio API** — synthesized plucked-string tones, strums and metronome clicks (no audio files,
-  no third-party media licenses).
-- **localStorage** — zero-backend persistence.
+| Fretboard | Equal-tempered physical fret geometry, 6/7/8-string tunings, capo, keyboard navigation, note selection, chord identification, scale and root-triad overlays. |
+| Chords | 41 formulas × 12 roots = 492 calculated chords, including augmented triads and augmented dominant sevenths. Search by name, symbol, notes or formula; generated voicings, fingering, barres and inversions. |
+| Sound | Locally hosted steel-string acoustic guitar recordings with pitch-corrected samples, strumming and a synthesized fallback if a sample cannot load. |
+| Theory | 15 beginner-to-advanced lessons, including new introductions to the guitar, chord diagrams and rhythm. Interactive visual labs, playable examples, in-context glossary definitions and optional saved challenges. |
+| Scales and progressions | 17 scales and modes, arpeggio overlays, playable scales, diatonic chord tables and progression templates. |
+| Tuner | A separate chromatic tuner with a headstock, string reference notes, 13 tunings and real-time pitch feedback. |
+| Metronome | A separate audio-clock metronome with steady, timing-coach and disappearing-click modes; tap tempo, accents, beats per bar and optional device-latency calibration. |
+| Practice | Chord and note quizzes, with local scores and streaks. The tuner and metronome are also accessible from Practice for existing users. |
+| Library | Favorites, chord notes, recent chords and lesson progress work locally. An optional passwordless account can sync favorites, notes and lesson challenges when a deployment configures the cloud service. |
 
 ## Getting started
 
-Requirements: Node.js 20+ (tested on Node 22).
+Use Node.js **22.12 or later** (Node 22 LTS is recommended; `.nvmrc` is provided).
 
 ```bash
-npm install
-npm run dev        # start the dev server (http://localhost:5173)
-npm test           # run the full test suite once
-npm run test:watch # watch mode
+npm ci
+npm run dev        # http://localhost:5173
+npm test           # unit and interaction tests
 npm run typecheck  # strict TypeScript check
-npm run build      # production build to dist/
-npm run preview    # serve the production build locally
+npm run build      # production output in dist/
+npm run preview    # serve the production build
 ```
+
+The static app works without any environment variables. The tuner and timing coach require a
+secure context (HTTPS or localhost), Web Audio and a microphone permission grant. They process
+microphone audio in the browser; no recording or microphone audio is uploaded. The timing coach
+works best with headphones, one clear attack per beat, and calibration for device latency.
+
+### Optional cross-device library sync
+
+Cross-device sync is implemented with Supabase Auth and a row-level-secured Postgres table. It is
+**not enabled automatically**: an operator must configure a Supabase project for the deployment.
+Without that configuration, the site displays an honest guest-only state and all local features
+continue working. Do not put service-role keys or other secrets in a browser build.
+
+1. Create a Supabase project and enable email magic-link authentication. Run
+   [`supabase/schema.sql`](supabase/schema.sql) in its SQL editor. The table's row-level security
+   permits authenticated users to read, insert and update **only their own** library row.
+2. In Supabase Authentication URL Configuration, set the site URL and allow the deployed
+   `/library` redirect URL (also add the preview URL when needed).
+3. Copy `.env.example` to `.env.local` for local development, or set the variables in your host's
+   build settings. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the project's **public**
+   URL and publishable/anon key. Restart the dev server or rebuild the deployment. Never use the
+   secret/service-role key here.
+4. In Library, request an email link and open it in the **same browser** that requested it. Repeat
+   on another device to access the same account. Authentication emails and delivery are provided by
+   the configured Supabase project; production projects should configure appropriate email delivery.
+
+On first sign-in, the current device's favorites, chord notes and completed lesson challenges are
+merged into the account. Per-item timestamps and deletion markers preserve removals; revision-checked
+writes retry if two devices update concurrently. Changes sync after local edits, when the page is
+focused or reconnected, and via **Sync now**. Notes changed on two devices use the most recent
+per-item timestamp, so device clocks should be reasonably accurate. Recently viewed chords and
+practice quiz totals remain local. Signing out leaves a local copy on that browser; clear site data
+on shared devices if needed. Clearing local data before it has synced removes the local copy.
 
 ## Architecture
 
 ```
 src/
-├── core/                  # Framework-agnostic music engine (no DOM, no React)
-│   ├── notes.ts           # pitch classes, enharmonics, MIDI/frequency math
-│   ├── intervals.ts       # interval vocabulary and semitone mappings
-│   ├── chord-definitions.ts  # all 38 chord types as interval formulas
-│   ├── chords.ts          # builds concrete chords, encyclopedia index, search names
-│   ├── tunings.ts         # 13 tunings (6/7/8 string) + capo application
-│   ├── voicing-engine.ts  # DFS voicing generator, fingering/barre assignment, ranking
-│   ├── chord-identifier.ts# reverse lookup: sounding notes -> chord names
-│   ├── scales.ts          # 17 scale/mode formulas + two-octave arpeggios
-│   ├── progressions.ts    # diatonic harmony, Roman numerals, templates, circle of 5ths
-│   ├── audio.ts           # Web Audio synth (pluck voice, strum, metronome click)
-│   └── storage.ts         # favorites / recents / notes / quiz progress
-├── components/            # reusable UI (Fretboard, ChordDiagram, SearchModal, …)
-├── pages/                 # routed pages (one module per product area)
-├── data/lessons.ts        # structured theory curriculum content
-├── hooks/                 # React bindings over core/storage
-├── lib/urls.ts            # single source of truth for routes/storage keys
-└── *.test.ts(x)           # Vitest suites colocated with the code they verify
+├── core/                    # Framework-independent music, audio and storage logic
+│   ├── notes.ts, intervals.ts, chords.ts, chord-definitions.ts
+│   ├── tunings.ts, voicing-engine.ts, chord-identifier.ts
+│   ├── scales.ts, progressions.ts, audio.ts
+│   ├── pitchDetection.ts    # bounded YIN-style fundamental detection
+│   ├── rhythm.ts            # beat offsets, timing feedback, silent-bar logic
+│   └── storage.ts           # local library and timestamped sync snapshots
+├── components/              # Fretboard, chord charts, tuner, metronome, lesson labs
+├── data/                    # theory curriculum and challenge questions
+├── hooks/                   # local storage, audio input and optional account sync
+├── lib/                     # URLs, fret geometry and cloud sync
+└── pages/                   # routed product areas
+public/audio/guitar/         # CC0 acoustic guitar recordings, with attribution
+public/audio/onset-detector.js # local-only AudioWorklet transient detector
+supabase/schema.sql          # optional account table and row-level policies
 ```
 
-### How the voicing engine works
+The voicing engine searches string/fret combinations, prunes unplayable spans, supports open and
+muted strings, assigns up to four fingers, detects barres and ranks practical results. The chord
+identifier compares sounding pitch classes against every formula, labels partial matches and uses
+the lowest sounding pitch for the bass. Chord and scale tone names follow interval spelling (for
+example C minor uses E♭); fretboard pitch labels can be switched between sharps and flats.
 
-1. For each string, compute every fret in the window whose pitch class is a chord tone (plus a
-   muted option).
-2. Depth-first search across strings, pruning branches that exceed the fret-span/muted limits,
-   violate the required bass note, or cannot still cover all mandatory tones with the strings left.
-   A hard node budget guarantees fast, bounded responses.
-3. At each leaf, validate that (a) every non-omittable chord tone is present, (b) no foreign note
-   exists, and (c) the shape is physically playable — at most four fretting fingers, with barre
-   detection across contiguous strings.
-4. Rank by span, position, muted strings, barre/finger cost, open-string bonus and root-position
-   bass; tag each result beginner/intermediate/advanced.
+## Audio and asset credits
 
-The chord identifier inverts this: for every pitch class in the input as a candidate root, it
-compares against every chord formula, accepting exact pitch-class sets or partial matches whose
-missing tones are explicitly omittable.
+The acoustic guitar samples were recorded by **Jeff Learman** on a 2017 Martin HD28 and are from
+the [Discord SFZ General MIDI Bank](https://github.com/sfzinstruments/Discord-SFZ-GM-Bank).
+The source instrument declares them **CC0**. The unchanged WAVs and details are in
+[`public/audio/guitar/README.md`](public/audio/guitar/README.md). FretHub adjusts playback rate to
+correct each recording's measured pitch and transpose neighboring notes. The sound is sampled, not
+a claim to reproduce every guitar articulation. Samples are served from the app's own host.
 
-### Testing philosophy
+## Deployment and constraints
 
-Musical truth is asserted against explicit interval formulas and known note sets, never against
-generated lists — e.g. G7 must equal `G B D F`, the open C shape `x32010` must be generated, and
-20/20 generated G7 voicings must identify back as G7. The React suite renders every route, drives
-the fretboard and quizzes, and verifies filtering, deep links, search and error states.
+The frontend builds to static files and can be deployed to Netlify, Vercel, or another static host.
+Configure an SPA fallback to `index.html`; `public/_redirects` provides it for Netlify. Node 22 is
+specified for compatible builds. A Supabase project is only needed for the optional account feature.
 
-## Supported vocabulary & honest constraints
+- The chord vocabulary is extensive but not exhaustive. Extended voicings may omit explicitly
+  declared tones; the identifier labels partial matches.
+- The tuner estimates pitch and can be affected by noise, string harmonics and microphone quality.
+  Tune one string at a time and check the target note and octave before turning a peg.
+- The timing coach estimates individual note attacks against the beat. Device/browser audio latency,
+  speaker bleed and noisy rooms affect results; use headphones and calibrate. It does not record or
+  judge the musicality of a performance. Background-tab throttling can affect metronome scheduling.
+- The first sample playback may take a moment on a slow connection. A synthesized fallback keeps
+  playback available if a sample is unavailable; reduced-data settings skip automatic prefetching.
+- Cloud sync requires a configured project and working email delivery. It is not a substitute for a
+  backup, and the local browser can retain signed-out data.
 
-- The 38 supported chord types are listed in
-  [`src/core/chord-definitions.ts`](src/core/chord-definitions.ts). The system is **extensible by
-  design** — a new chord is one formula entry — but it does not claim to enumerate every chord that
-  exists in music.
-- Search covers chord names/symbols, note sets, interval formulas, scale names and lesson text. It
-  does not yet support fuzzy misspellings or full-text lyric/song search.
-- Extended chords (9/11/13, altered) routinely omit the fifth (and sometimes 9/11) because six
-  strings cannot hold seven tones; omittable intervals are declared per chord type and shown in the
-  UI. The identifier labels such results as *partial matches*.
-- Fingering output is a four-finger, physically plausible model. Thumb-fretted and partial-barre
-  edge cases beyond the implemented rules are not modelled; percussion/tapping techniques are out of
-  scope.
-- Audio is synthesized plucked-string approximation, not sampled guitar. The tuner requires a
-  microphone and a browser supporting `getUserMedia`; unsupported/denied states are surfaced rather
-  than faked.
-- Persistence is per-device `localStorage`. There are no accounts or cloud sync (see roadmap).
+## License
 
-## Deployment
-
-The build output in `dist/` is fully static and works on any static host (Netlify, Vercel, GitHub
-Pages, S3/CloudFront). Because the app uses client-side routing, configure the host to serve
-`index.html` as the fallback for unknown paths (e.g. Netlify `_redirects`: `/* /index.html 200`).
-No environment variables or server processes are required.
-
-## Roadmap / production next steps
-
-- Optional accounts with cloud-synced favorites, notes and progress (the storage module is the
-  single seam to replace).
-- Sound-for-sound playback improvements (per-string timbre, palm mute and bend articulations).
-- Fret-hand visualization of thumb fretting and advanced partial barres.
-- Chord-scale relationship recommendations per voicing and MIDI export of progressions.
-- Internationalization of note naming and curriculum content.
+FretHub source is MIT licensed; see [`LICENSE`](LICENSE). The separately credited audio recordings are
+CC0 as described above.

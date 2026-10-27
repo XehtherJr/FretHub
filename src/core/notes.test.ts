@@ -17,7 +17,7 @@ describe('pitch-class primitives', () => {
     // Theoretical spellings
     expect(noteToPc('E#')).toBe(5);
     expect(noteToPc('Cb')).toBe(11);
-    expect(noteToPc('Fb')).toBe(3);
+    expect(noteToPc('Fb')).toBe(4); // F flat is enharmonic with E.
   });
 
   it('throws on garbage input', () => {

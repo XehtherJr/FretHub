@@ -128,12 +128,12 @@ export default function ProgressionsPage() {
       </div>
 
       <h2 className="section-title">{template.name} in {root}</h2>
-      <div className="grid grid-4">
+      <div className="grid progression-grid">
         {progression.map((pc, i) => {
           const chord = buildChord(pc.rootPc, pc.chordTypeId);
           const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
           return (
-            <div className="card" key={`${pc.roman}-${i}`} style={{ textAlign: 'center' }}>
+            <div className="card progression-card" key={`${pc.roman}-${i}`}>
               <span className="pill">{pc.roman}</span>
               {voicing && (
                 <ChordDiagram voicing={voicing} tuning={tuning} name={chord.shortName} compact showNotes={false} />
@@ -182,12 +182,12 @@ export default function ProgressionsPage() {
         </div>
 
         {customChords.length > 0 && (
-          <div className="grid grid-4" style={{ marginTop: '1rem' }}>
+          <div className="grid progression-grid" style={{ marginTop: '1rem' }}>
             {customChords.map((pc, i) => {
               const chord = buildChord(pc.rootPc, pc.chordTypeId);
               const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
               return (
-                <div className="card" key={i} style={{ textAlign: 'center' }}>
+                <div className="card progression-card" key={i}>
                   <span className="pill">{pc.roman}</span>
                   {voicing && (
                     <ChordDiagram voicing={voicing} tuning={tuning} name={chord.shortName} compact showNotes={false} />

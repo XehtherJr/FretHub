@@ -1,19 +1,23 @@
+import { Fragment } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { LESSONS, LEVEL_LABELS, LessonBlock } from '@/data/lessons';
 import { getLesson } from '@/data/lessons';
 import { buildChord } from '@core/chords';
 import { chordPath, lessonPath, scalePath } from '@/lib/urls';
 import EmptyState from '@/components/EmptyState';
+import GlossaryText from '@/components/GlossaryText';
+import LessonLab from '@/components/LessonLab';
+import LessonChallenge from '@/components/LessonChallenge';
 
 function Block({ block }: { block: LessonBlock }) {
   switch (block.kind) {
     case 'paragraph':
-      return <p className="muted">{block.text}</p>;
+      return <p className="muted">{block.text && <GlossaryText text={block.text} />}</p>;
     case 'callout':
       return (
         <div className="card" style={{ borderLeft: '3px solid var(--brass)' }}>
           <h3 style={{ fontSize: '1rem' }}>{block.title}</h3>
-          <p className="small" style={{ marginBottom: 0 }}>{block.text}</p>
+          <p className="small" style={{ marginBottom: 0 }}>{block.text && <GlossaryText text={block.text} />}</p>
         </div>
       );
     case 'formula':
@@ -28,7 +32,7 @@ function Block({ block }: { block: LessonBlock }) {
         <>
           <h3>{block.title}</h3>
           <ul>
-            {block.items?.map((item, i) => <li key={i} className="muted">{item}</li>)}
+            {block.items?.map((item, i) => <li key={i} className="muted"><GlossaryText text={item} /></li>)}
           </ul>
         </>
       );
@@ -107,12 +111,14 @@ export default function TheoryLessonPage() {
 
       <p className="eyebrow">{LEVEL_LABELS[lesson.level]} · ~{lesson.minutes} min read</p>
       <h1>{lesson.title}</h1>
-      <p className="lead">{lesson.summary}</p>
+      <p className="lead"><GlossaryText text={lesson.summary} /></p>
+      <p className="lesson-glossary-hint">New word? Select a <span> dotted term </span> for a plain-language explanation.</p>
 
-      <div className="stack">
-        {lesson.blocks.map((block, i) => <Block key={i} block={block} />)}
+      <div className="stack lesson-content">
+        {lesson.blocks.map((block, i) => <Fragment key={i}><Block block={block} />{i === 1 && <LessonLab key={lesson.id} lessonId={lesson.id} />}</Fragment>)}
       </div>
 
+      <LessonChallenge key={lesson.id} lessonId={lesson.id} />
       <hr />
       <nav className="spread" aria-label="Lesson navigation">
         {prev ? (

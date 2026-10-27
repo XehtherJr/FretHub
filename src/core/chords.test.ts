@@ -60,6 +60,16 @@ describe('chord construction from interval formulas', () => {
     expect(eb.tones.map((t) => t.name)).toEqual(['Eb', 'Gb', 'Bb']);
   });
 
+  it('spells chord tones by interval rather than a misleading enharmonic', () => {
+    expect(buildChord('C', 'minor').tones.map((tone) => tone.name)).toEqual(['C', 'Eb', 'G']);
+    expect(buildChord('C', 'augmented').tones.map((tone) => tone.name)).toEqual(['C', 'E', 'G#']);
+    expect(buildChord('C', 'dominant-7').tones.map((tone) => tone.name)).toEqual(['C', 'E', 'G', 'Bb']);
+    expect(buildChord('C', 'diminished-7').tones.map((tone) => tone.name)).toEqual(['C', 'Eb', 'Gb', 'Bbb']);
+    expect(noteToPc('Bbb')).toBe(noteToPc('A'));
+    expect(noteToPc('F##')).toBe(noteToPc('G'));
+    expect(chordSearchNames(buildChord('C', 'minor')).join(' ')).toContain('c d# g');
+  });
+
   it('represents slash chords and inversions', () => {
     const slash = buildChord('C', 'major', 'E');
     expect(slash.shortName).toBe('C/E');

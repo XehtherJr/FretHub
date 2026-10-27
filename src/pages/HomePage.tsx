@@ -1,129 +1,79 @@
 import { Link } from 'react-router-dom';
-import { CHORD_TYPES, CHORD_CATEGORIES } from '@core/chord-definitions';
-import { TUNINGS } from '@core/tunings';
+import { CHORD_TYPES } from '@core/chord-definitions';
+import { TUNINGS, getTuning } from '@core/tunings';
 import { SCALE_TYPES } from '@core/scales';
 import { buildChord } from '@core/chords';
 import { chordPath } from '@/lib/urls';
 import ChordDiagram from '@/components/ChordDiagram';
+import Icon from '@/components/Icon';
 import { generateVoicings } from '@core/voicing-engine';
-import { getTuning } from '@core/tunings';
 
 const POPULAR: [string, string][] = [
   ['G', 'major'], ['C', 'major'], ['D', 'major'], ['E', 'minor'],
   ['A', 'dominant-7'], ['D', 'minor-7'], ['C', 'major-7'], ['E', 'dominant-7sharp9'],
 ];
 
-const FEATURES = [
-  {
-    to: '/chords', glyph: '🎼', title: 'Chord encyclopedia',
-    text: `${12 * CHORD_TYPES.length} chords across ${CHORD_CATEGORIES.length} families — triads to altered dominants, every note and formula shown.`,
-  },
-  {
-    to: '/fretboard', glyph: '🎸', title: 'Interactive fretboard',
-    text: 'Click strings and frets to build chords, identify what you play, overlay scales and hear synthesized audio.',
-  },
-  {
-    to: '/theory', glyph: '📚', title: 'Music theory curriculum',
-    text: 'A structured 12-lesson path from semitones to jazz reharmonization, with live guitar examples in every lesson.',
-  },
-  {
-    to: '/scales', glyph: '🎹', title: 'Scales, modes & arpeggios',
-    text: `${SCALE_TYPES.length} scales and modes mapped across the neck, with arpeggio diagrams and interval highlighting.`,
-  },
-  {
-    to: '/progressions', glyph: '🔗', title: 'Progression explorer',
-    text: 'Build Roman-numeral progressions in any key, inspect diatonic harmony and play through real song forms.',
-  },
-  {
-    to: '/practice', glyph: '🎯', title: 'Practice tools',
-    text: 'Chord and note-identification quizzes, a working metronome and a microphone tuner with pitch detection.',
-  },
+const DESTINATIONS = [
+  { to: '/fretboard', number: '01', title: 'Fretboard workbench', text: 'Find notes, identify chords, and see scales across the neck.', meta: 'EXPLORE THE NECK' },
+  { to: '/chords', number: '02', title: 'Chord encyclopedia', text: 'Understand the notes, intervals, and shapes behind a chord.', meta: 'FIND A VOICING' },
+  { to: '/scales', number: '03', title: 'Scales & modes', text: 'Connect familiar patterns to the sounds they make.', meta: 'MAP A SCALE' },
 ];
 
 export default function HomePage() {
   const standard = getTuning('standard');
+  const featured = buildChord('G', 'major-7');
+  const featuredVoicing = generateVoicings(featured.pitchClasses, standard, featured.rootPc, { maxResults: 1 })[0];
 
   return (
-    <div className="page">
-      <section className="hero">
-        <p className="eyebrow">Guitar reference & music theory platform</p>
-        <h1>Every chord, <span className="accent">computed</span> — not copied.</h1>
-        <p className="lead">
-          Frethub combines a {12 * CHORD_TYPES.length}-entry chord encyclopedia, an algorithmic voicing
-          engine that works in {TUNINGS.length} tunings on 6-, 7- and 8-string guitars, a fully
-          interactive fretboard and a complete theory curriculum. No sign-up required — the whole
-          engine runs in your browser.
-        </p>
-        <div className="hero-actions">
-          <Link to="/chords" className="btn btn-primary">Browse the encyclopedia</Link>
-          <Link to="/fretboard" className="btn">Open the fretboard</Link>
-          <Link to="/theory" className="btn btn-ghost">Start learning theory</Link>
+    <div className="page home-page">
+      <section className="home-hero">
+        <div className="home-hero-copy">
+          <p className="eyebrow">A WORKSPACE FOR GUITARISTS</p>
+          <h1>Get to know<br /><span>your fretboard.</span></h1>
+          <p>Follow an idea from a single note to a new chord, a scale, or a deeper understanding of the music you play.</p>
+          <div className="hero-actions">
+            <Link to="/fretboard" className="btn btn-primary">Open the fretboard <Icon name="arrow" /></Link>
+            <Link to="/chords" className="btn">Browse the encyclopedia</Link>
+          </div>
+          <p className="home-guest-note">No account needed. Play, explore and save on this device as a guest.</p>
+          <div className="home-hero-meta"><span>{CHORD_TYPES.length * 12} CHORDS</span><span>{SCALE_TYPES.length} SCALES</span><span>{TUNINGS.length} TUNINGS</span></div>
+        </div>
+        <article className="home-study">
+          <div className="home-study-top"><span>IN THE ENCYCLOPEDIA</span><span>CHORD STUDY / 01</span></div>
+          <div className="home-study-body">
+            <div className="home-study-info"><span className="home-study-label">A LITTLE HARMONY</span><h2 id="featured-symbol">{featured.shortName}</h2><p>{featured.fullName}</p><div className="home-study-tones">{featured.tones.map((tone) => <span key={tone.interval}><b>{tone.name}</b><small>{tone.interval}</small></span>)}</div></div>
+            {featuredVoicing && <ChordDiagram voicing={featuredVoicing} tuning={standard} rootPc={featured.rootPc} compact showNotes={false} />}
+          </div>
+          <Link to={chordPath(featured.rootName, featured.typeId)} className="home-study-bottom" aria-labelledby="featured-action featured-symbol"><span id="featured-action">See the chord and its voicings</span><Icon name="arrow" /></Link>
+        </article>
+      </section>
+
+      <section className="home-section">
+        <div className="home-section-heading"><div><p className="eyebrow">PICK UP WHERE YOU ARE</p><h2>A place to start</h2></div><span>YOUR TOOLS, ALL IN ONE PLACE</span></div>
+        <div className="home-destinations">
+          {DESTINATIONS.map((item) => <Link to={item.to} key={item.to} className="home-destination"><span className="home-destination-number">{item.number} /</span><div><h3>{item.title}</h3><p>{item.text}</p><small>{item.meta} <Icon name="arrow" /></small></div></Link>)}
         </div>
       </section>
 
-      <section>
-        <h2 className="section-title">New here? Three steps to get going</h2>
-        <div className="grid grid-3">
-          <div className="card">
-            <p className="eyebrow">Step 1</p>
-            <h3>Learn the map of the neck</h3>
-            <p className="muted small">
-              Read <Link to="/theory/notes-pitch-enharmonics">notes and enharmonics</Link>, then use the
-              interactive fretboard to see how each note repeats across strings.
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Step 2</p>
-            <h3>Master the first-position chords</h3>
-            <p className="muted small">
-              Start with <Link to={chordPath('G', 'major')}>G</Link>,{' '}
-              <Link to={chordPath('C', 'major')}>C</Link>,{' '}
-              <Link to={chordPath('D', 'major')}>D</Link>,{' '}
-              <Link to={chordPath('E', 'minor')}>Em</Link> and{' '}
-              <Link to={chordPath('A', 'dominant-7')}>A7</Link> — diagrams, fingering and audio included.
-            </p>
-          </div>
-          <div className="card">
-            <p className="eyebrow">Step 3</p>
-            <h3>Train your ear and recognition</h3>
-            <p className="muted small">
-              Take the <Link to="/practice">chord-identification quizzes</Link> and run the metronome
-              while you practice. Progress is saved on this device.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2 className="section-title">Popular chords</h2>
-        <div className="grid grid-4">
+      <section className="home-section home-popular-section">
+        <div className="home-section-heading"><div><p className="eyebrow">A FEW FAMILIAR SOUNDS</p><h2>Popular chords</h2></div><Link to="/chords" className="text-link">All chords <Icon name="arrow" /></Link></div>
+        <div className="home-popular">
           {POPULAR.map(([root, typeId]) => {
             const chord = buildChord(root, typeId);
             const voicing = generateVoicings(chord.pitchClasses, standard, chord.rootPc, { maxResults: 1 })[0];
-            return (
-              <Link key={`${root}-${typeId}`} to={chordPath(root, typeId)} className="card feature-card" style={{ textAlign: 'center' }}>
-                {voicing && (
-                  <ChordDiagram voicing={voicing} tuning={standard} name={chord.shortName} compact showNotes={false} />
-                )}
-                <p className="small muted" style={{ marginBottom: 0 }}>
-                  {chord.tones.map((t) => t.name).join(' · ')}
-                </p>
-              </Link>
-            );
+            return <Link key={`${root}-${typeId}`} to={chordPath(root, typeId)} className="home-chord">{voicing && <ChordDiagram voicing={voicing} tuning={standard} name={chord.shortName} rootPc={chord.rootPc} compact showNotes={false} />}<span>{chord.tones.map((tone) => tone.name).join(' · ')}</span></Link>;
           })}
         </div>
       </section>
 
-      <section>
-        <h2 className="section-title">Everything in one workshop</h2>
-        <div className="grid grid-3">
-          {FEATURES.map((f) => (
-            <Link key={f.to} to={f.to} className="card feature-card">
-              <span className="glyph" aria-hidden="true">{f.glyph}</span>
-              <h3>{f.title}</h3>
-              <p className="muted small" style={{ marginBottom: 0 }}>{f.text}</p>
-            </Link>
-          ))}
+      <section className="home-section home-learning">
+        <div><p className="eyebrow">KEEP GOING</p><h2>Make the connections.</h2><p>Learn the why behind the shapes, then put it into practice.</p></div>
+        <div className="home-learning-links">
+          <Link to="/theory"><span><b>Music theory</b><small>A guided path, from notes to harmony.</small></span><Icon name="arrow" /></Link>
+          <Link to="/progressions"><span><b>Progression explorer</b><small>Hear how chords move together.</small></span><Icon name="arrow" /></Link>
+          <Link to="/practice"><span><b>Practice</b><small>Train your ears and learn the neck.</small></span><Icon name="arrow" /></Link>
+          <Link to="/tuner"><span><b>Guitar tuner</b><small>Get every string ready to play.</small></span><Icon name="arrow" /></Link>
+          <Link to="/metronome"><span><b>Metronome</b><small>Find your pulse and practise your timing.</small></span><Icon name="arrow" /></Link>
         </div>
       </section>
     </div>

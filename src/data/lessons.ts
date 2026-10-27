@@ -39,15 +39,57 @@ export interface Lesson {
 
 export const LESSONS: Lesson[] = [
   {
+    id: 'meet-your-guitar',
+    title: 'Meet your guitar',
+    level: 'beginner',
+    minutes: 6,
+    summary: 'Learn the names of the strings and the parts you will use to make your first notes.',
+    blocks: [
+      { kind: 'paragraph', text: 'A guitar makes sound when a string vibrates. The long part you hold is the neck; the thin metal strips across it are frets. Press a string just behind a fret and pluck it with your other hand. Shortening the vibrating string makes its pitch (how high or low it sounds) rise.' },
+      { kind: 'paragraph', text: 'Strings are numbered from the thinnest, highest-sounding string to the thickest, lowest-sounding string. On a six-string guitar, string 1 is the high E and string 6 is the low E. An open string is played without pressing any fret.' },
+      { kind: 'formula', title: 'Standard tuning, from thickest to thinnest', formula: '6 E2  ·  5 A2  ·  4 D3  ·  3 G3  ·  2 B3  ·  1 E4' },
+      { kind: 'list', title: 'A few useful parts', items: ['The headstock holds the tuning pegs; turn these gently to adjust string tension.', 'The nut is the small bar at the end of the neck that guides the open strings.', 'A capo is a clamp that holds all the strings down at the same fret.', 'The body amplifies the sound of an acoustic guitar.'] },
+      { kind: 'callout', title: 'Try it', text: 'Use the string explorer below. Listen from the low E to the high E; then open the tuner to hear each reference note again.' },
+    ],
+    related: ['notes-pitch-enharmonics', 'reading-chord-diagrams'],
+  },
+  {
+    id: 'reading-chord-diagrams',
+    title: 'Read your first chord diagram',
+    level: 'beginner',
+    minutes: 7,
+    summary: 'Turn the little grid above a chord into a shape you can play.',
+    blocks: [
+      { kind: 'paragraph', text: 'A chord is two or more different notes played together. A chord diagram is a picture of the neck as if the guitar were standing upright. Its vertical lines are strings: the thick low string is on the left, and the thin high string is on the right.' },
+      { kind: 'list', title: 'Read the picture', items: ['The thick horizontal line at the top is the nut. The spaces below it are frets.', 'A dot tells you where to press a string. A number inside a dot suggests a fretting finger: 1 is index, 2 middle, 3 ring and 4 little finger.', 'O means play the string open. An × means do not play that string.', 'A bar across several strings means one finger presses more than one string at the same fret.'] },
+      { kind: 'callout', title: 'Try it', text: 'Look at the C major diagram below. Tap Hear the shape, then follow the dots and the open and muted symbols from left to right.' },
+    ],
+    related: ['meet-your-guitar', 'triads'],
+  },
+  {
+    id: 'rhythm-basics',
+    title: 'Feel the beat',
+    level: 'beginner',
+    minutes: 8,
+    summary: 'Find a steady pulse, count a bar and make a simple strumming pattern.',
+    blocks: [
+      { kind: 'paragraph', text: 'The beat is the steady pulse you can tap your foot to. Tempo is the speed of that pulse, measured in beats per minute (BPM). A bar groups beats together; in 4/4 time, count four beats in each bar: 1, 2, 3, 4.' },
+      { kind: 'paragraph', text: 'You can divide each beat in two by counting “1 and 2 and 3 and 4 and.” These smaller spaces are eighth notes. Try a downstroke on each number and an upstroke on each “and,” even if you skip some strings or strums.' },
+      { kind: 'callout', title: 'Try it', text: 'Turn beats on and off in the rhythm builder below, then listen. Start slowly and keep your hand moving through the spaces you leave silent.' },
+      { kind: 'list', title: 'Remember', items: ['A beat is a pulse, not necessarily a strum: you can play more than one note per beat or leave a beat empty.', 'A metronome gives you a steady reference, but it is normal to need practice staying with it.', 'Slow and relaxed is more useful than fast and tense.'] },
+    ],
+    related: ['meet-your-guitar', 'progressions-function'],
+  },
+  {
     id: 'notes-pitch-enharmonics',
     title: 'Notes, octaves and enharmonic equivalents',
     level: 'beginner',
     minutes: 8,
-    summary: 'The 12-note chromatic system, semitones, whole tones and why one key can have two names.',
+    summary: 'The 12-note chromatic system, semitones, whole tones and why one note can have two names.',
     blocks: [
       {
         kind: 'paragraph',
-        text: 'Western music is built from exactly 12 pitches per octave, arranged as a repeating loop: C, C#/Db, D, D#/Eb, E, F, F#/Gb, G, G#/Ab, A, A#/Bb, B, then C again an octave higher. On a guitar, every fret is one of these 12 pitches, and moving up one fret raises the pitch by the smallest standard interval: a semitone (half step). Two frets make a whole tone (whole step).',
+        text: 'The twelve-tone equal-tempered system used here divides each octave into 12 notes, arranged as a repeating loop: C, C#/Db, D, D#/Eb, E, F, F#/Gb, G, G#/Ab, A, A#/Bb, B, then C again an octave higher. On a guitar, every fret is one of these 12 pitches, and moving up one fret raises the pitch by the smallest standard interval: a semitone (half step). Two frets make a whole tone (whole step).',
       },
       {
         kind: 'formula',
@@ -56,7 +98,7 @@ export const LESSONS: Lesson[] = [
       },
       {
         kind: 'paragraph',
-        text: 'Notice that some pitches carry two names — C# and Db are the same key on a piano and the same fret on a guitar. These enharmonic equivalents are spelled differently according to their harmonic context: the raised fourth of C is F#, but the flattened fifth of Gb is the identical pitch. Choosing the correct spelling keeps notation and theory coherent.',
+        text: 'Notice that some pitches carry two names — C# and Db are the same key on a piano and the same fret on a guitar. These enharmonic equivalents are spelled differently according to their harmonic context: the raised fourth of C is F#, while the flattened fifth of C is Gb — the same sounding pitch. Choosing the correct spelling keeps notation and theory coherent.',
       },
       {
         kind: 'list',
@@ -64,7 +106,7 @@ export const LESSONS: Lesson[] = [
         items: [
           'There are 12 unique pitch classes; the 13th note is the starting note one octave up.',
           'Natural notes (E–F and B–C) are a semitone apart with no sharp/flat between them.',
-          'All other natural-note pairs are a whole tone apart, with one sharp/flat in between.',
+          'All other adjacent natural-note pairs are a whole tone apart, with one sharp/flat in between.',
           'Enharmonic equivalents sound identical; context decides the spelling.',
         ],
       },
@@ -171,7 +213,7 @@ export const LESSONS: Lesson[] = [
         title: 'Why it matters on the guitar',
         items: [
           'Adjacent keys share six of seven notes — modulations a fifth away sound natural and smooth.',
-          'The inner ring shows each major key\'s relative minor, three semitones below.',
+          'Each major key has a relative minor whose root is three semitones lower.',
           'Cycle-of-fifths chord movement (ii–V–I, vi–ii–V–I) is the backbone of jazz standards.',
           'The tritone sits directly opposite on the circle and is the most distant possible key.',
         ],
@@ -179,7 +221,7 @@ export const LESSONS: Lesson[] = [
       {
         kind: 'callout',
         title: 'Try it',
-        text: 'Open Progressions and build a vi–ii–V–I in any key — you will hear the clockwise cycle landing satisfyingly on the tonic.',
+        text: 'Open Progressions and build a vi–ii–V–I in any key — its roots move by descending fifths toward the tonic.',
       },
     ],
     related: ['major-minor-scales', 'diatonic-harmony'],
@@ -434,12 +476,12 @@ export const LESSONS: Lesson[] = [
       },
       {
         kind: 'paragraph',
-        text: 'A secondary dominant is a dominant-seventh chord that targets a chord other than the tonic — V/vi, V/ii, V/IV and so on. In C major, A7 is V/vi: it is the dominant of D minor, and it resolves to Dm just as G7 resolves to C. Secondary dominants add temporary tonicization without leaving the home key.',
+        text: 'A secondary dominant is a dominant-seventh chord that targets a chord other than the tonic — V/vi, V/ii, V/IV and so on. In C major, A7 is V/ii: it is the dominant of D minor, and it resolves to Dm just as G7 resolves to C. Secondary dominants add temporary tonicization without leaving the home key.',
       },
       {
         kind: 'formula',
         title: 'Secondary dominants in C major',
-        formula: 'V/vi = A7 → Dm · V/ii = A7 (same target family) · V/V = D7 → G · V/IV = C7 → F',
+        formula: 'V/vi = E7 → Am · V/ii = A7 → Dm · V/V = D7 → G · V/IV = C7 → F',
       },
       {
         kind: 'paragraph',

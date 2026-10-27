@@ -10,6 +10,8 @@ import TheoryLessonPage from './pages/TheoryLessonPage';
 import ScalesPage from './pages/ScalesPage';
 import ProgressionsPage from './pages/ProgressionsPage';
 import PracticePage from './pages/PracticePage';
+import TunerPage from './pages/TunerPage';
+import MetronomePage from './pages/MetronomePage';
 import LibraryPage from './pages/LibraryPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -37,6 +39,8 @@ export default function App() {
           <Route path="scales/:scaleId" element={<ScalesPage />} />
           <Route path="progressions" element={<ProgressionsPage />} />
           <Route path="practice" element={<PracticePage />} />
+          <Route path="tuner" element={<TunerPage />} />
+          <Route path="metronome" element={<MetronomePage />} />
           <Route path="library" element={<LibraryPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

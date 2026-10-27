@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildScale, buildArpeggio, SCALE_TYPES } from './scales';
+import { buildScale, buildArpeggio, scaleTriadIntervals, SCALE_TYPES } from './scales';
 import {
   diatonicTriads, diatonicSevenths, naturalMinorTriads, harmonicMinorTriads,
   buildProgression, PROGRESSION_TEMPLATES, circleOfFifths,
@@ -13,6 +13,11 @@ describe('scales and modes', () => {
     expect(buildScale('C', 'major').map((n) => n.name)).toEqual(
       ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
     );
+  });
+
+  it('uses interval-correct note spellings in major and minor scales', () => {
+    expect(buildScale('C', 'natural-minor').map((note) => note.name)).toEqual(['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb']);
+    expect(buildScale('F#', 'major').map((note) => note.name)).toEqual(['F#', 'G#', 'A#', 'B', 'C#', 'D#', 'E#']);
   });
 
   it('natural minor shares the major key signature (relative minor)', () => {
@@ -62,6 +67,16 @@ describe('scales and modes', () => {
     }
   });
 
+  it('derives the root triad from the notes of each scale', () => {
+    expect(scaleTriadIntervals('major')).toEqual(['1', '3', '5']);
+    expect(scaleTriadIntervals('dorian')).toEqual(['1', 'b3', '5']);
+    expect(scaleTriadIntervals('locrian')).toEqual(['1', 'b3', 'b5']);
+    expect(scaleTriadIntervals('whole-tone')).toEqual(['1', '3', '#5']);
+    for (const type of SCALE_TYPES) {
+      expect(scaleTriadIntervals(type.id).every((interval) => type.intervals.includes(interval))).toBe(true);
+    }
+  });
+
   it('builds a two-octave arpeggio from chord intervals', () => {
     const arp = buildArpeggio('C', ['1', '3', '5']);
     expect(arp).toHaveLength(5); // root, third, fifth + third/fifth an octave up
@@ -78,6 +93,7 @@ describe('diatonic harmony and Roman numerals', () => {
     );
     expect(triads.map((c) => c.roman)).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
     expect(triads[4].rootName).toBe('G'); // V = G
+    expect(triads[1].function).toBe('subdominant'); // ii is predominant, not tonic
   });
 
   it('produces seventh chords with the right qualities', () => {
