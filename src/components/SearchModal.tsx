@@ -16,7 +16,7 @@ interface ResultRow {
   title: string;
   meta: string;
   path: string;
-  kind: 'Chord' | 'Scale' | 'Lesson';
+  kind: 'Chord' | 'Scale' | 'Lesson' | 'Tool';
 }
 
 let encyclopediaCache: BuiltChord[] | null = null;
@@ -61,6 +61,15 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
         });
       }
       return rows;
+    }
+
+    for (const tool of [
+      { id: 'tuner', title: 'Guitar tuner', meta: 'Tune by microphone or reference note', path: '/tuner' },
+      { id: 'metronome', title: 'Metronome', meta: 'Steady, timing coach and disappearing click', path: '/metronome' },
+    ]) {
+      if (tokens.every((token) => `${tool.title} ${tool.meta}`.toLowerCase().includes(token))) {
+        rows.push({ ...tool, symbol: 'Tool', kind: 'Tool' });
+      }
     }
 
     const chordRows: ResultRow[] = [];

@@ -37,6 +37,10 @@ describe('ChordDiagram', () => {
     const figure = screen.getByRole('img', { name: /F, fret positions/ });
     expect(figure.querySelector('.cd-barre')?.textContent).toBe('1'); // barre label
     expect(figure.querySelectorAll('.cd-dot').length).toBeGreaterThan(0);
+    const nut = figure.querySelector('.cd-nut')!;
+    const string = figure.querySelector('.cd-string')!;
+    expect(nut.getAttribute('y1')).toBe(nut.getAttribute('y2')); // horizontal nut
+    expect(string.getAttribute('x1')).toBe(string.getAttribute('x2')); // vertical strings
     // Top row markers show no open/muted strings for a full barre.
     expect(figure.textContent).not.toContain('×');
   });
@@ -79,6 +83,27 @@ describe('Fretboard', () => {
     expect(screen.getByRole('img', { name: 'scale pattern' })).toBeTruthy();
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('.fb-note.v-root')?.textContent).toBe('E');
+  });
+
+  it('uses arrow keys to navigate positions and skips frets under a capo', () => {
+    render(<Fretboard tuning={getTuning('standard')} capo={2} fretCount={12} interactive />);
+    const board = screen.getByRole('group');
+    const open = within(board).getByRole('button', { name: /E4 string open, capo fret 2, note F#4/ });
+    open.focus();
+    fireEvent.keyDown(open, { key: 'ArrowRight' });
+    const firstPlayable = within(board).getByRole('button', { name: /String 1, fret 3, note G4/ });
+    expect(firstPlayable).toHaveFocus();
+    fireEvent.keyDown(firstPlayable, { key: 'ArrowDown' });
+    expect(within(board).getByRole('button', { name: /String 2, fret 3, note D4/ })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(within(board).getByRole('button', { name: /B3 string open, capo fret 2, note C#4/ })).toHaveFocus();
+  });
+
+  it('supports extended-range tunings without changing the number of fret positions', () => {
+    render(<Fretboard tuning={getTuning('8-string-standard')} fretCount={12} interactive />);
+    const board = screen.getByRole('group');
+    expect(within(board).getAllByRole('button')).toHaveLength(8 * 13);
+    expect(within(board).getByRole('button', { name: /F#1 string open, note F#1, string 8/ })).toBeTruthy();
   });
 
   it('reflects a capo visually and disables frets under it', () => {

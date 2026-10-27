@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getFavorites, toggleFavorite as persistToggle } from '@core/storage';
+import { getFavorites, toggleFavorite as persistToggle, LIBRARY_CHANGE_EVENT } from '@core/storage';
 
 /** React binding over the localStorage favorites set. */
 export function useFavorites() {
   const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
-    setFavorites(getFavorites());
+    const refresh = () => setFavorites(getFavorites());
+    refresh();
+    window.addEventListener(LIBRARY_CHANGE_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(LIBRARY_CHANGE_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
   }, []);
 
   const toggle = useCallback((key: string) => {

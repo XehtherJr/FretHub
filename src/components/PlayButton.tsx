@@ -11,7 +11,7 @@ interface PlayButtonProps {
   direction?: 'down' | 'up';
 }
 
-/** Audio playback button. Synthesizes sound live — no audio files required. */
+/** Audio playback button for the locally sampled acoustic guitar. */
 export default function PlayButton({ midi, note, label, small, direction = 'down' }: PlayButtonProps) {
   const [active, setActive] = useState(false);
   if (!isAudioSupported()) return null;

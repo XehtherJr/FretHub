@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { buildChord, BuiltChord } from '@core/chords';
 import { getChordType } from '@core/chord-definitions';
 import { TUNINGS, getTuning, applyCapo } from '@core/tunings';
 import { generateVoicings, Voicing } from '@core/voicing-engine';
 import { intervalSemitones } from '@core/intervals';
-import { addRecent, getNote, saveNote } from '@core/storage';
+import { addRecent, getNote, saveNote, LIBRARY_CHANGE_EVENT } from '@core/storage';
 import { chordPath, chordKey as makeKey } from '@/lib/urls';
 import ChordDiagram from '@/components/ChordDiagram';
 import PlayButton from '@/components/PlayButton';
@@ -36,6 +36,9 @@ export default function ChordDetailPage() {
   const [allowBarre, setAllowBarre] = useState(true);
   const [bassPc, setBassPc] = useState<number | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [noteConflict, setNoteConflict] = useState(false);
+  const noteDirty = useRef(false);
+  const lastSavedNote = useRef('');
   const { has, toggle } = useFavorites();
 
   useEffect(() => {
@@ -46,13 +49,28 @@ export default function ChordDetailPage() {
       typeId: chord.typeId,
       shortName: chord.shortName,
     });
-    setNoteText(getNote(makeKey(chord.rootName, chord.typeId)));
+    const saved = getNote(makeKey(chord.rootName, chord.typeId));
+    lastSavedNote.current = saved;
+    noteDirty.current = false;
+    setNoteConflict(false);
+    setNoteText(saved);
     setBassPc(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootName, typeId]);
 
   const tuning = useMemo(() => applyCapo(getTuning(tuningId), capo), [tuningId, capo]);
   const key = chord ? makeKey(chord.rootName, chord.typeId) : '';
+  useEffect(() => {
+    if (!key) return;
+    const refresh = () => {
+      const saved = getNote(key);
+      if (noteDirty.current && saved !== lastSavedNote.current) setNoteConflict(true);
+      else if (!noteDirty.current) { lastSavedNote.current = saved; setNoteText(saved); }
+    };
+    window.addEventListener(LIBRARY_CHANGE_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => { window.removeEventListener(LIBRARY_CHANGE_EVENT, refresh); window.removeEventListener('storage', refresh); };
+  }, [key]);
 
   const voicings = useMemo<Voicing[]>(() => {
     if (!chord) return [];
@@ -95,7 +113,7 @@ export default function ChordDetailPage() {
     .map((id) => buildChord(chord.rootPc, id));
 
   return (
-    <div className="page">
+    <div className="page chord-detail-page">
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <Link to="/">Home</Link> <span>/</span>{' '}
         <Link to="/chords">Chords</Link> <span>/</span>{' '}
@@ -176,7 +194,7 @@ export default function ChordDetailPage() {
         </section>
       </div>
 
-      <section className="card" style={{ marginTop: '1rem' }}>
+      <section className="card voicing-section" style={{ marginTop: '1rem' }}>
         <div className="spread">
           <h2 style={{ margin: 0 }}>Voicings</h2>
           <span className="small muted">{voicings.length} generated for {tuning.name}</span>
@@ -232,7 +250,8 @@ export default function ChordDetailPage() {
           </div>
         </div>
 
-        <div className="row" style={{ marginBottom: '1.2rem' }}>
+        {capo > 0 && <p className="small muted" style={{ marginTop: '0.8rem' }}>Chart fret numbers are relative to the capo at fret {capo}.</p>}
+        <div className="row" style={{ marginBottom: '1.2rem', marginTop: '0.8rem' }}>
           <button type="button" className="btn btn-sm" aria-pressed={allowOpen} onClick={() => setAllowOpen((v) => !v)}>
             Open strings {allowOpen ? 'on' : 'off'}
           </button>
@@ -252,13 +271,13 @@ export default function ChordDetailPage() {
             Try widening the fret window, allowing open strings or barres, or clearing the bass-note inversion.
           </EmptyState>
         ) : (
-          <div className="grid grid-4">
+          <div className="voicing-grid">
             {voicings.slice(0, 16).map((voicing, idx) => {
-              const tab = voicing.frets.map((f) => (f === null ? 'x' : String(f))).join('');
+              const tab = voicing.frets.map((f) => (f === null ? 'x' : String(f))).join(' ');
               const covered = new Set(voicing.pitchClasses);
               const omitted = chord.tones.filter((t) => !covered.has(t.pc));
               return (
-                <div className="card" key={tab + idx} style={{ textAlign: 'center', padding: '0.9rem' }}>
+                <div className="voicing-item" key={tab + idx}>
                   <ChordDiagram
                     voicing={voicing}
                     tuning={tuning}
@@ -289,16 +308,20 @@ export default function ChordDetailPage() {
         <h2>Your notes on {chord.shortName}</h2>
         <textarea
           rows={3}
-          placeholder="Fingerings that work for you, song references, practice reminders… (stored on this device)"
+          placeholder="Fingerings, song references, or practice reminders…"
           value={noteText}
-          onChange={(e) => setNoteText(e.target.value)}
+          onChange={(e) => { noteDirty.current = true; setNoteText(e.target.value); }}
           aria-label="Personal notes for this chord"
         />
+        {noteConflict && <p className="small" role="status">The saved note changed on another device. Your unsaved edits are still here; saving will replace that version.</p>}
         <div className="row" style={{ marginTop: '0.6rem' }}>
           <button
             type="button"
             className="btn btn-primary btn-sm"
             onClick={() => {
+              lastSavedNote.current = noteText.trim() ? noteText : '';
+              noteDirty.current = false;
+              setNoteConflict(false);
               saveNote(key, noteText);
               showToast('Note saved');
             }}

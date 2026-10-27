@@ -7,7 +7,7 @@
 import {
   noteToPc, pcToNote, transposePc, normalizePc, NoteName,
 } from './notes';
-import { intervalSemitones, getInterval } from './intervals';
+import { intervalSemitones, getInterval, spellInterval } from './intervals';
 import { ChordType, CHORD_TYPES, getChordType } from './chord-definitions';
 
 export interface ChordTone {
@@ -61,7 +61,7 @@ export function buildChord(
     const pc = transposePc(rootPc, intervalSemitones(symbol));
     return {
       pc,
-      name: pcToNote(pc, preferFlats),
+      name: spellInterval(rootName, symbol),
       interval: symbol,
       intervalName: getInterval(symbol).name,
     };
@@ -115,6 +115,10 @@ export function chordSearchNames(chord: BuiltChord): string[] {
   names.add(chord.rootName.toLowerCase());
   // Notes and formula as searchable text.
   names.add(chord.tones.map((t) => t.name).join(' ').toLowerCase());
+  // Accept either common enharmonic spelling in search, even when the
+  // interval-correct display uses e.g. Eb rather than D#.
+  names.add(chord.tones.map((t) => pcToNote(t.pc)).join(' ').toLowerCase());
+  names.add(chord.tones.map((t) => pcToNote(t.pc, true)).join(' ').toLowerCase());
   names.add(chord.formula.join(' ').toLowerCase());
   return [...names];
 }

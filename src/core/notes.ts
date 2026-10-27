@@ -21,20 +21,16 @@ export function normalizePc(pc: number): number {
   return ((pc % 12) + 12) % 12;
 }
 
-const NOTE_ALIASES: Record<string, number> = {
-  'cb': 11, 'c': 0, 'c#': 1, 'db': 1, 'd': 2, 'd#': 3, 'eb': 3,
-  'e': 4, 'fb': 3, 'e#': 5, 'f': 5, 'f#': 6, 'gb': 6, 'g': 7,
-  'g#': 8, 'ab': 8, 'a': 9, 'a#': 10, 'bb': 10, 'b': 11, 'b#': 0,
-};
+const NATURAL_PCS: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 
-/** Parse a note name (e.g. "C#", "eb", "Bb") into a pitch class. */
+/** Parse note names including theoretical double sharps/flats into a pitch class. */
 export function noteToPc(note: NoteName): number {
   const key = note.trim().toLowerCase().replace(/\s+/g, '');
-  const pc = NOTE_ALIASES[key];
-  if (pc === undefined) {
-    throw new Error(`Unknown note name: "${note}"`);
-  }
-  return pc;
+  const match = /^([a-g])(#+|b+)?$/.exec(key);
+  if (!match) throw new Error(`Unknown note name: "${note}"`);
+  const accidental = match[2] ?? '';
+  const shift = accidental.startsWith('#') ? accidental.length : -accidental.length;
+  return normalizePc(NATURAL_PCS[match[1]] + shift);
 }
 
 /** Name a pitch class, choosing sharps or flats. */

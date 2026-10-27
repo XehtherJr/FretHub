@@ -6,6 +6,8 @@
  * fifth), "b7" (minor seventh), "9" (compound major second), etc.
  */
 
+import { normalizePc, noteToPc } from './notes';
+
 export interface IntervalDef {
   /** Formula symbol, e.g. "b3", "#11". */
   symbol: string;
@@ -48,6 +50,20 @@ export function getInterval(symbol: string): IntervalDef {
   const def = INTERVALS[symbol];
   if (!def) throw new Error(`Unknown interval symbol: "${symbol}"`);
   return def;
+}
+
+/** Spell the correct letter for an interval (C + b3 = Eb, not D#). */
+export function spellInterval(rootName: string, symbol: string): string {
+  const letters = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const rootLetter = rootName[0]?.toUpperCase();
+  const rootIndex = letters.indexOf(rootLetter);
+  if (rootIndex < 0) throw new Error(`Unknown root note: "${rootName}"`);
+  const interval = getInterval(symbol);
+  const letter = letters[(rootIndex + interval.degree - 1) % letters.length];
+  const target = normalizePc(noteToPc(rootName) + interval.semitones);
+  const natural = noteToPc(letter);
+  const difference = ((target - natural + 18) % 12) - 6;
+  return letter + (difference > 0 ? '#'.repeat(difference) : 'b'.repeat(-difference));
 }
 
 /** Semitone offset of an interval symbol, reduced into one octave (0..11). */

@@ -1,261 +1,97 @@
-/* ==========================================================================
-   Interactive horizontal fretboard
-   ========================================================================== */
-
-.fb-scroll { overflow-x: auto; padding-bottom: 0.6rem; }
-
-.fretboard {
-  --fb-fret-w: clamp(46px, 6.5vw, 74px);
-  --fb-row-h: clamp(34px, 4.6vw, 46px);
-  --fb-open-w: 42px;
-  display: grid;
-  min-width: max-content;
-  user-select: none;
+/* Shared instrument surfaces. The SVG supplies physical geometry; the HTML
+   buttons above it supply reliable keyboard, pointer and screen-reader access. */
+.fb-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: #625b4e transparent;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
 }
-
-.fb-row {
-  display: grid;
-  grid-template-columns: var(--fb-open-w) repeat(var(--fb-frets), var(--fb-fret-w));
-  height: var(--fb-row-h);
-  position: relative;
-}
-.fb-row::after {
-  /* the string itself */
-  content: '';
-  position: absolute;
-  left: var(--fb-open-w);
-  right: 0;
-  top: 50%;
-  height: 2px;
-  background: linear-gradient(90deg, #8d8275, #c9bfb0, #8d8275);
-  transform: translateY(-50%);
-  pointer-events: none;
-  z-index: 1;
-}
-.fb-row[data-thick='true']::after { height: 3px; }
-
-.fb-cell {
-  position: relative;
-  border-right: 2px solid #b9ad9c;
-  background: linear-gradient(180deg, #402819, #332014 60%, #2c1b10);
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  cursor: default;
-}
-.fb-cell.open-cell {
-  background: transparent;
-  border-right: 3px solid #e8ddc9; /* nut */
-}
-.fb-row:first-child .fb-cell.open-cell { border-top: none; }
-.fb-cell.fret-0 { border-left: none; }
-
-/* inlay markers */
-.fb-inlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  z-index: 0;
-}
-.fb-inlay .dot {
-  width: 11px; height: 11px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #f3ead9, #b9ad9c 70%, #8d8275);
-  opacity: 0.85;
-}
-.fb-inlay.double .dot { margin: 0 5px; }
-.fb-inlay.double { display: flex; align-items: center; justify-content: center; }
-
-/* the note button / marker */
-.fb-note {
-  width: 72%;
-  height: 72%;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.55);
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: clamp(0.7rem, 1.6vw, 0.9rem);
-  color: #241708;
-  background: radial-gradient(circle at 32% 28%, var(--brass-bright), var(--brass-dim));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-  cursor: pointer;
-  padding: 0;
-  z-index: 3;
-  transition: transform 0.08s;
-}
-.fb-note:hover { transform: scale(1.08); }
-.fb-note.v-root { background: radial-gradient(circle at 32% 28%, #f0896a, #b94a2c); color: #fff4ee; }
-.fb-note.v-scale { background: radial-gradient(circle at 32% 28%, #a4cf92, #568a43); color: #12220c; }
-.fb-note.v-cool { background: radial-gradient(circle at 32% 28%, #9cc9e2, #487f9f); color: #0c1c26; }
-.fb-note.v-muted { background: transparent; border: none; box-shadow: none; color: var(--text-faint); cursor: pointer; }
-.fb-note.v-open-string { background: radial-gradient(circle at 32% 28%, #e9d8b8, #b3a083); }
-
-.fb-cell.is-empty.interactive { cursor: pointer; }
-.fb-cell.is-empty.interactive:hover { background: linear-gradient(180deg, #4a2e1c, #3a2517); }
-.fb-cell.is-empty.interactive:hover::before {
-  content: '';
-  width: 60%; height: 60%;
-  border-radius: 50%;
-  border: 2px dashed rgba(216, 162, 74, 0.55);
-  position: absolute;
-  z-index: 2;
-}
-
-.fb-string-label {
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.68rem;
-  color: var(--text-faint);
-  z-index: 4;
-  pointer-events: none;
+.fb-scroll::-webkit-scrollbar { height: 6px; }
+.fb-scroll::-webkit-scrollbar-thumb { background: #625b4e; border-radius: 6px; }
+.fretboard { position: relative; width: 100%; user-select: none; }
+.fb-instrument { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.fb-svg-caption, .fb-svg-capo-label, .fb-svg-fret-number, .fb-svg-string-label {
   font-family: var(--font-mono);
+  fill: #a49d90;
 }
-.fb-open-cell {
-  background: transparent;
-  display: grid;
-  place-items: center;
-  position: relative;
-  z-index: 2;
-  padding: 0;
-}
-.fb-open-cell .fb-note { width: 62%; height: 62%; font-size: 0.78rem; }
-
-.fb-fret-numbers {
-  display: grid;
-  grid-template-columns: var(--fb-open-w) repeat(var(--fb-frets), var(--fb-fret-w));
-  margin-top: 4px;
-}
-.fb-fret-numbers span {
-  text-align: center;
-  font-size: 0.72rem;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-}
-
-/* capo */
-.fb-capo {
+.fb-svg-caption { font-size: 9px; letter-spacing: 1.1px; }
+.fb-svg-capo-label { font-size: 10px; fill: #dfc18b; }
+.fb-svg-fret-number { font-size: 11px; fill: #a9a195; }
+.fb-svg-string-label { font-size: 12px; fill: #c1b9ab; font-weight: 600; }
+.fb-position {
   position: absolute;
-  top: -4px;
-  bottom: -4px;
-  left: calc(var(--fb-open-w) + (var(--capo-fret, 1) - 1) * var(--fb-fret-w) + 2px);
-  width: calc(var(--fb-fret-w) - 6px);
-  background: linear-gradient(180deg, #5a5248, #332d27);
-  border-radius: 6px;
-  border: 1px solid #7d7468;
-  z-index: 5;
-  display: grid;
-  place-items: center;
-  font-size: 0.7rem;
-  color: #d9cfbf;
-  font-weight: 700;
-  pointer-events: none;
-}
-
-/* ==========================================================================
-   Vertical chord box diagrams
-   ========================================================================== */
-
-.chord-diagram {
-  --cd-fret: clamp(30px, 8vw, 42px);
-  --cd-string: clamp(26px, 7vw, 36px);
-  display: inline-block;
-  padding: 0.4rem;
-}
-.cd-top {
-  display: grid;
-  grid-template-columns: repeat(var(--cd-strings), var(--cd-string));
-  height: 22px;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  line-height: 1;
 }
-.cd-top span {
-  text-align: center;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  color: var(--text-dim);
-  font-size: 0.95rem;
-}
-.cd-top span.muted { color: var(--text-faint); }
-.cd-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--cd-strings), var(--cd-string));
-  grid-template-rows: repeat(var(--cd-rows), var(--cd-fret));
-  position: relative;
-}
-.cd-grid::before {
-  /* nut or starting-fret bar */
-  content: '';
-  position: absolute;
-  top: 0; bottom: 0;
-  left: 0;
-  width: var(--cd-nut, 4px);
-  background: #e8ddc9;
-  border-radius: 2px;
-}
-.cd-fret-cell {
-  border-right: 2px solid #a99d8b;
-  border-bottom: 2px solid #a99d8b;
-  position: relative;
+.fb-hit { cursor: pointer; z-index: 2; -webkit-tap-highlight-color: transparent; }
+.fb-hit:disabled { cursor: not-allowed; }
+.fb-hit:focus-visible { outline: 2px solid #f5d79c; outline-offset: -3px; border-radius: 3px; z-index: 4; }
+.fb-static { pointer-events: none; z-index: 2; }
+.fb-note, .fb-hover-note {
   display: grid;
   place-items: center;
-}
-.cd-fret-cell:first-child { border-left: 2px solid #a99d8b; }
-.cd-grid .cd-row-first { border-top: 2px solid #a99d8b; }
-.cd-dot {
-  width: 68%;
-  height: 68%;
+  width: min(30px, calc(100% - 3px));
+  aspect-ratio: 1;
+  flex: none;
   border-radius: 50%;
-  background: radial-gradient(circle at 32% 28%, var(--brass-bright), var(--brass-dim));
-  border: 1px solid rgba(0, 0, 0, 0.5);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  color: #27231e;
+  background: #e8e1d5;
+  border: 1px solid #f2ece1;
+  box-shadow: 0 1px 3px #0c0908a6;
+}
+.fb-note.v-root { color: #211a10; background: #d9ad67; border-color: #f0d39c; }
+.fb-note.v-scale { color: #282521; background: #d4cec1; border-color: #e8e2d7; }
+.fb-note.v-cool { color: #f2e6ce; background: #29231e; border: 2px solid #d6ae73; }
+.fb-note.v-open-string { background: #e8e1d5; }
+.fb-open-note {
   display: grid;
   place-items: center;
-  font-size: 0.78rem;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #aaa09180;
+  border-radius: 50%;
+  background: #292622;
+  color: #e0d9cc;
+  font-size: 11px;
   font-weight: 700;
-  color: #241708;
-  z-index: 2;
 }
-.cd-dot.root { background: radial-gradient(circle at 32% 28%, #f0896a, #b94a2c); color: #fff4ee; }
-.cd-barre {
-  position: absolute;
-  height: 34%;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--brass-bright), var(--brass-dim));
-  border: 1px solid rgba(0, 0, 0, 0.45);
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #241708;
+.fb-hover-note { visibility: hidden; background: #29231ee8; border: 1px solid #e1c08a; color: #f4e7ce; box-shadow: none; }
+.fb-hit:focus-visible .fb-hover-note { visibility: visible; }
+@media (hover: hover) {
+  .fb-hit:hover:not(:disabled) .fb-hover-note { visibility: visible; }
+  .fb-hit:hover:not(:disabled) .fb-open-note { border-color: #ead4af; background: #41392f; }
+  .fb-hit:hover:not(:disabled) .fb-note { filter: brightness(1.12); }
 }
-.cd-position-label {
-  position: absolute;
-  right: calc(100% + 6px);
-  top: -2px;
-  font-size: 0.75rem;
-  color: var(--text-faint);
+
+/* Chord charts use the familiar left-to-right low-to-high string order. */
+.chord-diagram { display: inline-flex; flex-direction: column; align-items: center; margin: 0; max-width: 100%; }
+.cd-illustration { display: block; width: 180px; max-width: 100%; height: auto; overflow: visible; }
+.chord-diagram.is-compact .cd-illustration { width: 150px; }
+.cd-string, .cd-fret { stroke: #a9a399; stroke-width: 1.25; }
+.cd-nut { stroke: #e3dcd0; stroke-width: 4; }
+.cd-open-marker, .cd-position-label, .cd-note-name {
+  fill: #bdb6aa;
   font-family: var(--font-mono);
+  font-size: 11px;
 }
-.cd-notes {
-  display: grid;
-  grid-template-columns: repeat(var(--cd-strings), var(--cd-string));
-  margin-top: 4px;
-}
-.cd-notes span {
-  text-align: center;
-  font-size: 0.7rem;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
-}
-.cd-name {
-  text-align: center;
-  font-family: var(--font-display);
-  color: var(--cream);
-  margin-top: 0.35rem;
-  font-size: 1rem;
-}
+.cd-open-marker { font-size: 14px; }
+.cd-open-marker.root { fill: #d9ad67; font-weight: 700; }
+.cd-position-label, .cd-note-name { fill: #a59d90; font-size: 10px; }
+.cd-dot circle, .cd-barre rect { fill: #e5ded2; }
+.cd-dot.root circle { fill: #d9ad67; }
+.cd-dot text, .cd-barre text { fill: #211d19; font-family: var(--font-body); font-size: 10px; font-weight: 750; }
+.cd-barre text { fill: #d4cbbc; }
+.cd-name { color: var(--cream); font-size: 1rem; font-weight: 650; margin-top: 0.35rem; line-height: 1.2; }

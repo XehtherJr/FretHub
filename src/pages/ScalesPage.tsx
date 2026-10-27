@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useParams, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import Fretboard, { FretMarkerData } from '@/components/Fretboard';
-import { SCALE_TYPES, ScaleCategory, buildScale, buildArpeggio, getScaleType } from '@core/scales';
+import Icon from '@/components/Icon';
+import { SCALE_TYPES, ScaleCategory, buildScale, buildArpeggio, getScaleType, scaleTriadIntervals } from '@core/scales';
 import { getTuning } from '@core/tunings';
 import { fretPc } from '@core/voicing-engine';
 import { noteToPc, pcToNote, pcOctaveToMidi, ROOT_NOTES } from '@core/notes';
@@ -9,185 +10,142 @@ import { playMidi, isAudioSupported, getAudioContext } from '@core/audio';
 import { scalePath } from '@/lib/urls';
 
 const CATEGORY_LABELS: Record<ScaleCategory, string> = {
-  major: 'Major & minor',
-  minor: 'Major & minor',
-  mode: 'Modes',
-  pentatonic: 'Pentatonic',
-  blues: 'Blues',
-  symmetrical: 'Symmetrical',
+  major: 'Major & minor', minor: 'Major & minor', mode: 'Modes',
+  pentatonic: 'Pentatonic', blues: 'Blues', symmetrical: 'Symmetrical',
 };
+
+function validRoot(value: string | null): string {
+  if (!value) return 'C';
+  try { noteToPc(value); return value; } catch { return 'C'; }
+}
 
 export default function ScalesPage() {
   const params = useParams();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const scaleId = params.scaleId && SCALE_TYPES.some((s) => s.id === params.scaleId)
-    ? params.scaleId
-    : 'major';
-  const [root, setRoot] = useState(searchParams.get('root') ?? 'C');
+  const scaleId = params.scaleId && SCALE_TYPES.some((scale) => scale.id === params.scaleId) ? params.scaleId : 'major';
+  const [root, setRoot] = useState(() => validRoot(searchParams.get('root')));
   const [showArpeggio, setShowArpeggio] = useState(false);
-  const [fretCount, setFretCount] = useState(15);
+  const [fretCount, setFretCount] = useState(12);
   const tuning = getTuning('standard');
 
   useEffect(() => {
-    const r = searchParams.get('root');
-    if (r) setRoot(r);
+    setRoot(validRoot(searchParams.get('root')));
   }, [searchParams]);
 
   const type = getScaleType(scaleId);
   const notes = useMemo(() => buildScale(root, scaleId), [root, scaleId]);
   const rootPc = noteToPc(root);
-  const arp = useMemo(() => buildArpeggio(root, ['1', '3', '5']), [root]);
+  const triadIntervals = useMemo(() => scaleTriadIntervals(scaleId), [scaleId]);
+  const arp = useMemo(() => buildArpeggio(root, triadIntervals), [root, triadIntervals]);
 
   const markers = useMemo<FretMarkerData[]>(() => {
-    const scalePcs = new Map(notes.map((n) => [n.pc, n]));
-    const arpPcs = new Set(arp.map((n) => n.pc));
+    const scalePcs = new Set(notes.map((note) => note.pc));
+    const arpPcs = new Set(arp.map((note) => note.pc));
     const out: FretMarkerData[] = [];
     tuning.strings.forEach((_, stringIndex) => {
       for (let fret = 0; fret <= fretCount; fret++) {
         const pc = fretPc(tuning, stringIndex, fret);
-        const note = scalePcs.get(pc);
-        if (!note) continue;
-        out.push({
-          stringIndex,
-          fret,
-          variant: pc === rootPc ? 'root' : showArpeggio && arpPcs.has(pc) ? 'cool' : 'scale',
-          label: pcToNote(pc, root.includes('b')),
-        });
+        if (!scalePcs.has(pc)) continue;
+        out.push({ stringIndex, fret, variant: pc === rootPc ? 'root' : showArpeggio && arpPcs.has(pc) ? 'cool' : 'scale', label: pcToNote(pc, root.includes('b')) });
       }
     });
     return out;
   }, [notes, arp, showArpeggio, tuning, fretCount, rootPc, root]);
 
   const playScale = () => {
-    // Ascending one-octave run with correct octave handling, scheduled on the audio clock.
     const audio = getAudioContext();
     const start = audio.currentTime + 0.05;
     let octave = 4;
-    let prev = -1;
-    const run: number[] = [];
-    notes.forEach((n) => {
-      if (n.pc <= prev) octave++;
-      prev = n.pc;
-      run.push(pcOctaveToMidi(n.pc, octave));
+    let previous = -1;
+    const run = notes.map((note) => {
+      if (note.pc <= previous) octave++;
+      previous = note.pc;
+      return pcOctaveToMidi(note.pc, octave);
     });
-    run.push(pcOctaveToMidi(rootPc, octave + 1)); // closing tonic
-    run.forEach((midi, i) => playMidi(midi, { when: start + i * 0.32, duration: 0.7 }));
+    // The starting tonic is in octave 4, so its closing octave is always 5,
+    // even when the scale crosses C before reaching its final note.
+    run.push(pcOctaveToMidi(rootPc, 5));
+    run.forEach((midi, index) => playMidi(midi, { when: start + index * 0.32, duration: 0.7 }));
   };
 
   const changeRoot = (note: string) => {
     setRoot(note);
     setSearchParams({ root: note }, { replace: true });
   };
-
   const grouped = useMemo(() => {
     const groups = new Map<string, typeof SCALE_TYPES>();
-    for (const s of SCALE_TYPES) {
-      const label = CATEGORY_LABELS[s.category];
+    for (const scale of SCALE_TYPES) {
+      const label = CATEGORY_LABELS[scale.category];
       const list = groups.get(label) ?? [];
-      list.push(s);
+      list.push(scale);
       groups.set(label, list);
     }
     return [...groups.entries()];
   }, []);
 
   return (
-    <div className="page">
-      <p className="eyebrow">Scales, modes & arpeggios</p>
+    <div className="page scales-page">
+      <p className="eyebrow">The vocabulary of the neck</p>
       <h1>Scale library</h1>
-      <p className="lead">
-        {SCALE_TYPES.length} scales built from interval formulas and mapped across the neck. Root
-        notes are marked in red and the root-triad arpeggio can be overlaid in blue.
-      </p>
+      <p className="lead">Explore scales and modes as a set of notes, intervals, and patterns on the guitar.</p>
 
-      <div className="grid" style={{ gridTemplateColumns: 'minmax(220px, 280px) 1fr', gap: '1rem', alignItems: 'start' }}>
-        <aside className="card" style={{ position: 'sticky', top: 80 }}>
-          <h2 style={{ fontSize: '1.05rem' }}>Scales</h2>
+      <div className="scale-mobile-chooser field">
+        <label htmlFor="mobile-scale">Choose a scale</label>
+        <select id="mobile-scale" value={scaleId} onChange={(event) => navigate(scalePath(event.target.value, root))}>
+          {grouped.map(([label, scales]) => <optgroup key={label} label={label}>{scales.map((scale) => <option key={scale.id} value={scale.id}>{scale.name}</option>)}</optgroup>)}
+        </select>
+      </div>
+      <div className="scales-layout">
+        <aside className="scale-nav" aria-label="Scale library navigation">
+          <p className="scale-nav-title">SCALES & MODES <span>{SCALE_TYPES.length}</span></p>
           {grouped.map(([label, scales]) => (
-            <div key={label} style={{ marginBottom: '0.8rem' }}>
-              <p className="small faint" style={{ margin: '0.4rem 0' }}>{label}</p>
-              <div className="row">
-                {scales.map((s) => (
-                  <Link
-                    key={s.id}
-                    to={scalePath(s.id, root)}
-                    className={`btn btn-sm ${s.id === scaleId ? '' : 'btn-ghost'}`}
-                    aria-pressed={s.id === scaleId}
-                  >
-                    {s.name}
-                  </Link>
-                ))}
-              </div>
+            <div key={label} className="scale-nav-group">
+              <p>{label}</p>
+              {scales.map((scale) => (
+                <Link key={scale.id} to={scalePath(scale.id, root)} className={scale.id === scaleId ? 'active' : ''} aria-current={scale.id === scaleId ? 'page' : undefined}>{scale.name}</Link>
+              ))}
             </div>
           ))}
         </aside>
 
-        <div>
-          <section className="card">
-            <div className="spread">
-              <h2 style={{ margin: 0 }}>{root} {type.name}</h2>
-              <span className="pill">{CATEGORY_LABELS[type.category]}</span>
+        <div className="scale-content">
+          <section className="scale-summary">
+            <div className="scale-title-row">
+              <div><p className="wb-section-kicker">{CATEGORY_LABELS[type.category].toUpperCase()}</p><h2>{root} {type.name}</h2></div>
+              <span className="scale-formula">{type.stepFormula}</span>
             </div>
-            <p className="muted">{type.description}</p>
-            <p className="small">Step formula: <code>{type.stepFormula}</code>
-              {type.modeOf && <> · mode {type.modeOf.degree} of the {type.modeOf.parent.replace('-', ' ')}</>}
-            </p>
-
-            <div className="field">
+            <p className="scale-description">{type.description}</p>
+            {type.modeOf && <p className="small faint">Mode {type.modeOf.degree} of the {type.modeOf.parent.replace('-', ' ')} scale</p>}
+            <div className="scale-root-picker">
               <label id="scale-root-label">Root note</label>
               <div role="group" aria-labelledby="scale-root-label" className="row">
-                {ROOT_NOTES.map((note) => (
-                  <button
-                    key={note}
-                    type="button"
-                    className="btn btn-sm"
-                    aria-pressed={root === note}
-                    onClick={() => changeRoot(note)}
-                  >
-                    {note}
-                  </button>
-                ))}
+                {ROOT_NOTES.map((note) => {
+                  const displayNote = pcToNote(noteToPc(note), root.includes('b'));
+                  return <button key={note} type="button" className="btn btn-sm" aria-pressed={noteToPc(root) === noteToPc(note)} onClick={() => changeRoot(displayNote)}>{displayNote}</button>;
+                })}
               </div>
             </div>
-
-            <div className="row" style={{ marginBottom: '1rem' }}>
-              {notes.map((n) => (
-                <span key={n.interval} className={`note-chip ${n.interval === '1' ? 'root' : ''}`} title={n.intervalName}>
-                  {n.name}
-                </span>
-              ))}
+            <div className="scale-tone-line" aria-label={`Notes in ${root} ${type.name}`}>
+              {notes.map((note) => <div key={note.interval} title={note.intervalName}><span className={`note-chip ${note.interval === '1' ? 'root' : ''}`}>{note.name}</span><small>{note.interval}</small></div>)}
             </div>
-            <div className="row">
-              {isAudioSupported() && (
-                <button type="button" className="btn btn-primary btn-sm" onClick={playScale}>▶ Play ascending</button>
-              )}
-              <button type="button" className="btn btn-sm" aria-pressed={showArpeggio} onClick={() => setShowArpeggio((v) => !v)}>
-                {showArpeggio ? 'Arpeggio on' : 'Arpeggio off'}
-              </button>
-              <select
-                className="btn-sm"
-                style={{ width: 'auto' }}
-                value={fretCount}
-                onChange={(e) => setFretCount(Number(e.target.value))}
-                aria-label="Frets shown"
-              >
-                {[12, 15, 22].map((f) => <option key={f} value={f}>{f} frets</option>)}
+            <div className="scale-actions">
+              {isAudioSupported() && <button type="button" className="btn btn-primary btn-sm" onClick={playScale}><Icon name="play" /> Play ascending</button>}
+              <button type="button" className="btn btn-sm" aria-pressed={showArpeggio} onClick={() => setShowArpeggio((value) => !value)}>Root triad {showArpeggio ? 'on' : 'off'}</button>
+              <select className="scale-fret-select" value={fretCount} onChange={(event) => setFretCount(Number(event.target.value))} aria-label="Frets shown">
+                {[12, 15, 22, 24].map((fret) => <option key={fret} value={fret}>{fret} frets</option>)}
               </select>
             </div>
-            {showArpeggio && (
-              <p className="small faint" style={{ marginTop: '0.6rem', marginBottom: 0 }}>
-                Blue dots are the {root} major triad arpeggio (1–3–5): {arp.slice(0, 3).map((n) => n.name).join(' · ')}
-              </p>
-            )}
+            {showArpeggio && <p className="scale-triad-copy">Outlined notes form the root triad ({triadIntervals.join(' · ')}): {arp.slice(0, triadIntervals.length).map((note) => note.name).join(' · ')}.</p>}
           </section>
 
-          <section className="card" style={{ marginTop: '1rem' }}>
-            <Fretboard
-              tuning={tuning}
-              fretCount={fretCount}
-              markers={markers}
-              showNoteNames
-              ariaLabel={`${root} ${type.name} scale pattern across ${fretCount} frets`}
-            />
+          <section className="scale-board">
+            <div className="wb-neck-header">
+              <div><span className="wb-section-kicker">THE NECK</span><span className="wb-neck-description">Standard tuning <span> / </span> {fretCount} frets</span></div>
+              <div className="wb-legend"><span><i className="legend-dot root" />Root</span><span><i className="legend-dot tone" />Scale tone</span>{showArpeggio && <span><i className="legend-dot triad" />Triad</span>}</div>
+            </div>
+            <Fretboard tuning={tuning} fretCount={fretCount} markers={markers} showNoteNames ariaLabel={`${root} ${type.name} scale pattern across ${fretCount} frets`} />
+            <p className="scale-board-hint">Scroll horizontally to explore the neck. For note-by-note playback, use the <Link to="/fretboard">fretboard workbench</Link>.</p>
           </section>
         </div>
       </div>
