@@ -2,7 +2,7 @@ import { Fragment, useState } from 'react';
 
 const TERMS: { pattern: string; meaning: string }[] = [
   { pattern: 'enharmonic equivalents?', meaning: 'Two names for the same sounding pitch, like C sharp and D flat.' },
-  { pattern: 'pitch classes?', meaning: 'All notes with the same letter and accidental, regardless of how high or low they sound.' },
+  { pattern: 'pitch classes?', meaning: 'Notes that sound the same within an octave, regardless of register; enharmonic names such as C sharp and D flat share a pitch class.' },
   { pattern: 'key signatures?', meaning: 'The sharps or flats written at the start of music to show its usual notes.' },
   { pattern: 'whole (?:tones?|steps?)', meaning: 'A distance of two frets on one guitar string; also called a whole step.' },
   { pattern: 'half steps?', meaning: 'The distance from one fret to the next; also called a semitone.' },

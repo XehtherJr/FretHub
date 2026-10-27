@@ -6,7 +6,8 @@ import { TUNINGS, getTuning, applyCapo } from '@core/tunings';
 import { generateVoicings, Voicing } from '@core/voicing-engine';
 import { intervalSemitones } from '@core/intervals';
 import { addRecent, getNote, saveNote, LIBRARY_CHANGE_EVENT } from '@core/storage';
-import { chordPath, chordKey as makeKey } from '@/lib/urls';
+import { chordPath, chordKey as makeKey, triadStudyPath } from '@/lib/urls';
+import { isTriadQuality } from '@core/triadRelationships';
 import ChordDiagram from '@/components/ChordDiagram';
 import PlayButton from '@/components/PlayButton';
 import EmptyState from '@/components/EmptyState';
@@ -147,6 +148,7 @@ export default function ChordDetailPage() {
           >
             Open on fretboard
           </Link>
+          {isTriadQuality(chord.typeId) && <Link to={triadStudyPath(chord.rootName, chord.typeId, undefined, { tuning: tuningId, capo })} className="btn">Explore its relationships</Link>}
         </div>
       </header>
 

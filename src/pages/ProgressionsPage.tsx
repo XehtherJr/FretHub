@@ -10,7 +10,7 @@ import { getTuning } from '@core/tunings';
 import { generateVoicings } from '@core/voicing-engine';
 import { playMidi, isAudioSupported, getAudioContext } from '@core/audio';
 import ChordDiagram from '@/components/ChordDiagram';
-import { chordPath } from '@/lib/urls';
+import { chordPath, triadStudyPath } from '@/lib/urls';
 
 const FUNCTION_LABEL: Record<string, string> = {
   tonic: 'T — tonic',
@@ -111,8 +111,9 @@ export default function ProgressionsPage() {
                   <td><strong>{triad.roman}</strong></td>
                   <td>
                     <Link to={chordPath(triad.rootName, triad.chordTypeId)}>
-                      {buildChord(triad.rootPc, triad.chordTypeId).shortName}
+                      {buildChord(triad.rootName, triad.chordTypeId).shortName}
                     </Link>
+                    <Link className="triad-inline-link" to={triadStudyPath(triad.rootName, triad.chordTypeId)} aria-label={`Study ${buildChord(triad.rootName, triad.chordTypeId).fullName} triad`}>Study</Link>
                   </td>
                   <td>
                     <Link to={chordPath(sev.rootName, sev.chordTypeId)}>

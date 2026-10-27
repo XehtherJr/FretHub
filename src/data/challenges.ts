@@ -1,4 +1,4 @@
-export interface LessonChallenge { prompt: string; choices: string[]; answer: number; explanation: string }
+export interface LessonChallenge { prompt: string; choices: string[]; answer: number; explanation: string; hint?: string }
 
 /** Short checks reinforce the main idea; wrong answers never lock a learner out. */
 export const LESSON_CHALLENGES: Record<string, LessonChallenge> = {
@@ -6,15 +6,15 @@ export const LESSON_CHALLENGES: Record<string, LessonChallenge> = {
   'reading-chord-diagrams': { prompt: 'What does an × above a string mean?', choices: ['Play it open', 'Do not play that string', 'Press the twelfth fret'], answer: 1, explanation: '× means the string is muted or skipped. O means it is played open.' },
   'rhythm-basics': { prompt: 'How many beats are in a bar of 4/4?', choices: ['Two', 'Four', 'Eight'], answer: 1, explanation: 'A bar of 4/4 has four quarter-note beats. Each beat can be divided into smaller notes.' },
   'notes-pitch-enharmonics': { prompt: 'How far apart are two neighboring frets on the same string?', choices: ['One semitone', 'One octave', 'One whole tone'], answer: 0, explanation: 'One fret is a semitone, also called a half step. Two frets make a whole tone.' },
-  intervals: { prompt: 'How many semitones are in a major third?', choices: ['Three', 'Four', 'Seven'], answer: 1, explanation: 'A major third spans four semitones. A minor third spans three.' },
+  intervals: { prompt: 'How many semitones are in a major third?', choices: ['Three', 'Four', 'Seven'], answer: 1, hint: 'Compare C to E on one string: count the frets between them.', explanation: 'A major third spans four semitones. A minor third spans three.' },
   'major-minor-scales': { prompt: 'Which notes belong to C major?', choices: ['C D E F G A B', 'C D E F# G A B', 'C D Eb F G Ab Bb'], answer: 0, explanation: 'C major uses the seven natural notes: C D E F G A B.' },
   'circle-of-fifths': { prompt: 'Which key is one step clockwise from C on the circle of fifths?', choices: ['F', 'G', 'A'], answer: 1, explanation: 'Moving clockwise from C goes up a perfect fifth to G.' },
-  triads: { prompt: 'Which notes make a C augmented triad?', choices: ['C E G', 'C Eb G', 'C E G#'], answer: 2, explanation: 'An augmented triad raises the fifth: C, E and G sharp.' },
+  triads: { prompt: 'Which notes make a C augmented triad?', choices: ['C E G', 'C Eb G', 'C E G#'], answer: 2, hint: 'Start with C major (C E G) and raise its fifth by one semitone.', explanation: 'An augmented triad raises the fifth: C, E and G sharp.' },
   'seventh-chords': { prompt: 'Which note changes C major into C7?', choices: ['B', 'Bb', 'F#'], answer: 1, explanation: 'C7 adds a minor seventh, B flat, to C E G.' },
-  'inversions-slash-chords': { prompt: 'In C/E, which note is the lowest sounding note?', choices: ['C', 'E', 'G'], answer: 1, explanation: 'The note after the slash names the bass. C/E is a C chord with E in the bass.' },
-  'diatonic-harmony': { prompt: 'What is the IV chord in C major?', choices: ['F major', 'G major', 'D minor'], answer: 0, explanation: 'F is the fourth scale degree of C major, and its diatonic triad is F major.' },
+  'inversions-slash-chords': { prompt: 'In C/E, which note is the lowest sounding note?', choices: ['C', 'E', 'G'], answer: 1, hint: 'In a slash chord, look after the slash for the bass note.', explanation: 'The note after the slash names the bass. C/E is a C chord with E in the bass.' },
+  'diatonic-harmony': { prompt: 'What is the IV chord in C major?', choices: ['F major', 'G major', 'D minor'], answer: 0, hint: 'Count to the fourth note of C D E F G A B, then stack notes from that scale.', explanation: 'F is the fourth scale degree of C major, and its diatonic triad is F major.' },
   'progressions-function': { prompt: 'In C major, which movement is V to I?', choices: ['C to F', 'G to C', 'F to G'], answer: 1, explanation: 'G is V and C is I. Moving from G to C creates a familiar sense of arrival.' },
-  modes: { prompt: 'Which notes are shared by D Dorian and C major?', choices: ['The same seven notes', 'No notes at all', 'Only the note C'], answer: 0, explanation: 'D Dorian uses C major’s notes but treats D as its tonal center.' },
+  modes: { prompt: 'Which notes are shared by D Dorian and C major?', choices: ['The same seven notes', 'No notes at all', 'Only the note C'], answer: 0, hint: 'Compare D E F G A B C with C D E F G A B; the home note is different.', explanation: 'D Dorian uses C major’s notes but treats D as its tonal center.' },
   'voice-leading': { prompt: 'What does smooth voice leading usually favor?', choices: ['The largest possible jumps', 'Small movements between individual notes', 'Playing every chord in the same fret position'], answer: 1, explanation: 'Smooth voice leading keeps common notes and moves the remaining voices by small distances where practical.' },
   'jazz-altered': { prompt: 'What is commonly altered in an altered dominant chord?', choices: ['The fifth or ninth', 'Only the root', 'The number of strings on the guitar'], answer: 0, explanation: 'Altered dominants often raise or lower the fifth and/or ninth to create tension.' },
 };

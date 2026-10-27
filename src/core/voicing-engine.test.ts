@@ -82,6 +82,24 @@ describe('voicing engine — musical validity', () => {
     expect(voicings.every((v) => v.bassPc === noteToPc('E'))).toBe(true);
   });
 
+  it('constrains the actual lowest sounding MIDI note, not the first string', () => {
+    const chord = buildChord('C', 'major');
+    for (const bass of chord.pitchClasses) {
+      const voicings = generateVoicings(chord.pitchClasses, STD, chord.rootPc, { requiredBass: bass, maxFret: 14, maxMuted: 3, maxResults: 100 });
+      expect(voicings.length).toBeGreaterThan(0);
+      for (const voicing of voicings) {
+        const lowest = Math.min(...voicing.midi.filter((midi): midi is number => midi !== null));
+        expect(lowest % 12).toBe(bass);
+        expect(voicing.bassPc).toBe(bass);
+      }
+    }
+    // An open higher string can sound lower than a heavily fretted low string.
+    const reentrant = { ...STD, id: 'reentrant-test', strings: [STD.strings[5], ...STD.strings.slice(1, 5), STD.strings[0]] };
+    const voicings = generateVoicings(chord.pitchClasses, reentrant, chord.rootPc, { requiredBass: noteToPc('C'), maxFret: 5, maxMuted: 3 });
+    expect(voicings.length).toBeGreaterThan(0);
+    for (const voicing of voicings) expect(Math.min(...voicing.midi.filter((midi): midi is number => midi !== null)) % 12).toBe(noteToPc('C'));
+  });
+
   it('handles extended chords via omittable tones', () => {
     const chord = buildChord('C', 'dominant-13');
     const voicings = generateVoicings(chord.pitchClasses, STD, chord.rootPc, {
@@ -147,10 +165,17 @@ describe('fingering assignment', () => {
     // F major barre: 133211 (E-shaped at fret 1)
     const result = assignFingering([1, 3, 3, 2, 1, 1], true);
     expect(result).not.toBeNull();
-    expect(result!.barre).toEqual({ fret: 1, stringFrom: 4, stringTo: 5 });
-    expect(result!.fingers[4]).toBe(1);
-    expect(result!.fingers[5]).toBe(1);
+    expect(result!.barre).toEqual({ fret: 1, stringFrom: 0, stringTo: 5 });
+    expect(result!.fingers).toEqual([1, 3, 4, 2, 1, 1]);
     expect(result!.fingerCount).toBeLessThanOrEqual(4);
+  });
+
+  it('does not assign one finger to unrelated frets or barre across an open string', () => {
+    const withoutBarre = assignFingering([1, 3, 3, 2, 1, 1], false);
+    expect(withoutBarre).toBeNull();
+    const withOpen = assignFingering([1, 3, 0, 3, 1, 1], true);
+    expect(withOpen?.barre && withOpen.barre.stringFrom <= 0 && withOpen.barre.stringTo >= 4).toBeFalsy();
+    if (withOpen) for (const [index, fret] of [1, 3, 0, 3, 1, 1].entries()) if (fret > 0) expect(withOpen.fingers[index]).not.toBe(0);
   });
 
   it('marks open strings and muted strings', () => {

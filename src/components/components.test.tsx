@@ -10,6 +10,7 @@ vi.mock('@core/audio', () => ({
   isAudioSupported: () => true,
   getAudioContext: () => ({ currentTime: 0, state: 'running', resume: () => {} }),
   playMidi: vi.fn(),
+  playSequence: vi.fn(),
   strum: vi.fn(),
   playClick: vi.fn(),
 }));

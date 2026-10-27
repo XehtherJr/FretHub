@@ -66,6 +66,7 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
     for (const tool of [
       { id: 'tuner', title: 'Guitar tuner', meta: 'Tune by microphone or reference note', path: '/tuner' },
       { id: 'metronome', title: 'Metronome', meta: 'Steady, timing coach and disappearing click', path: '/metronome' },
+      { id: 'triad-study', title: 'Triad relationship study', meta: 'Connect chord tones, shapes, scales and keys', path: '/theory/triads/explore' },
     ]) {
       if (tokens.every((token) => `${tool.title} ${tool.meta}`.toLowerCase().includes(token))) {
         rows.push({ ...tool, symbol: 'Tool', kind: 'Tool' });

@@ -10,6 +10,8 @@ import './styles/workbench.css';
 import './styles/pages.css';
 import './styles/tools.css';
 import './styles/lessons.css';
+import './styles/relationships.css';
+import './styles/theory-connections.css';
 
 // Fetch the local recordings after the interface has had a chance to render.
 window.setTimeout(prefetchGuitarSamples, 1500);

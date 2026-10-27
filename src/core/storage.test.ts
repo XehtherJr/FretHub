@@ -83,6 +83,15 @@ describe('cloud sync', () => {
     expect(getNotes()['C|major']).toBe('My fingering');
     expect(getCompletedLessons()).toContain('triads');
   });
+  it('merges and restores the separate triad application challenge using the existing lesson snapshot', async () => {
+    const cloud = new FakeCloud();
+    markLessonComplete('triad-transfer-v1');
+    await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
+    localStorage.clear();
+    await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
+    expect(getCompletedLessons()).toContain('triad-transfer-v1');
+    expect(getLibrarySnapshot().lessons['triad-transfer-v1'].value).toBe(true);
+  });
   it('retries a concurrent update and preserves both devices’ changes', async () => {
     const cloud = new FakeCloud();
     cloud.row = { data: emptySnapshot(), revision: 1 };

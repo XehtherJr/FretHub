@@ -136,22 +136,26 @@ export function playMidi(midi: number, options: PluckOptions = {}): void {
     .catch(() => playSynth(audio, midi, options));
 }
 
-/** Strum low-to-high on a downstroke; wait for all samples before scheduling. */
-export function strum(midiNotes: (number | null)[], direction: 'down' | 'up' = 'down', gap = 0.035): void {
+/** Wait for all samples before scheduling a sequence, including its fallback notes. */
+export function playSequence(midiNotes: number[], gap = 0.35, duration = 1.4, velocity = 0.9): void {
   const audio = getAudioContext();
-  const notes = midiNotes.filter((n): n is number => n !== null);
-  const ordered = direction === 'down' ? notes : [...notes].reverse();
-  void Promise.all(ordered.map((midi) => {
+  void Promise.all(midiNotes.map((midi) => {
     const pitch = nearestSamplePitch(midi);
     return loadSample(audio, pitch).then((buffer) => ({ midi, pitch, buffer })).catch(() => ({ midi, pitch, buffer: null }));
   })).then((voices) => {
     const start = audio.currentTime + 0.01;
     voices.forEach(({ midi, pitch, buffer }, i) => {
-      const options = { when: start + i * gap, duration: 2.8, velocity: 0.85 };
+      const options = { when: start + i * gap, duration, velocity };
       if (buffer) playSample(audio, buffer, pitch, midi, options);
       else playSynth(audio, midi, options);
     });
   });
+}
+
+/** Strum low-to-high on a downstroke; wait for all samples before scheduling. */
+export function strum(midiNotes: (number | null)[], direction: 'down' | 'up' = 'down', gap = 0.035): void {
+  const notes = midiNotes.filter((n): n is number => n !== null);
+  playSequence(direction === 'down' ? notes : [...notes].reverse(), gap, 2.8, 0.85);
 }
 
 /** Schedule a short metronome click against the audio clock. */
