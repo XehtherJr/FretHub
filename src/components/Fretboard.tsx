@@ -19,6 +19,8 @@ export interface FretMarkerData {
   /** Physical fret number, or 0 for the open string. */
   fret: number;
   label?: string;
+  /** Spoken explanation of a marker's musical role, when different from its visible label. */
+  description?: string;
   variant?: MarkerVariant;
 }
 
@@ -165,7 +167,7 @@ export default function Fretboard({
         data-position={key}
         disabled={!isPlayable(fret)}
         tabIndex={key === effectiveFocusKey ? 0 : -1}
-        aria-label={`${positionLabel}${interaction === 'play' ? ', play note' : marker ? ', selected' : ''}`}
+        aria-label={`${positionLabel}${marker?.description ? `, ${marker.description}` : ''}${marker?.label && showNoteNames ? `, marker ${marker.label}` : ''}${interaction === 'play' ? ', play note' : marker ? ', selected' : ''}`}
         aria-pressed={interaction === 'select' ? !!marker : undefined}
         onFocus={() => setFocusKey(key)}
         onKeyDown={(event) => handleNavigation(event, stringIndex, fret)}

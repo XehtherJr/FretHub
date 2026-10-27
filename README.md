@@ -11,7 +11,7 @@ to browse, play sounds, practise, or save a library on the current device.
 | Fretboard | Equal-tempered physical fret geometry, 6/7/8-string tunings, capo, keyboard navigation, note selection, chord identification, scale and root-triad overlays. |
 | Chords | 41 formulas × 12 roots = 492 calculated chords, including augmented triads and augmented dominant sevenths. Search by name, symbol, notes or formula; generated voicings, fingering, barres and inversions. |
 | Sound | Locally hosted steel-string acoustic guitar recordings with pitch-corrected samples, strumming and a synthesized fallback if a sample cannot load. |
-| Theory | 15 beginner-to-advanced lessons, including new introductions to the guitar, chord diagrams and rhythm. Interactive visual labs, playable examples, in-context glossary definitions and optional saved challenges. |
+| Theory | 15 ordered lessons with interactive labs, glossary and optional saved checks. The connected triad study follows a chord from its notes through the neck, inversions, scales, application and a two-key challenge. |
 | Scales and progressions | 17 scales and modes, arpeggio overlays, playable scales, diatonic chord tables and progression templates. |
 | Tuner | A separate chromatic tuner with a headstock, string reference notes, 13 tunings and real-time pitch feedback. |
 | Metronome | A separate audio-clock metronome with steady, timing-coach and disappearing-click modes; tap tempo, accents, beats per bar and optional device-latency calibration. |
@@ -71,7 +71,7 @@ src/
 ├── core/                    # Framework-independent music, audio and storage logic
 │   ├── notes.ts, intervals.ts, chords.ts, chord-definitions.ts
 │   ├── tunings.ts, voicing-engine.ts, chord-identifier.ts
-│   ├── scales.ts, progressions.ts, audio.ts
+│   ├── scales.ts, progressions.ts, triadRelationships.ts, audio.ts
 │   ├── pitchDetection.ts    # bounded YIN-style fundamental detection
 │   ├── rhythm.ts            # beat offsets, timing feedback, silent-bar logic
 │   └── storage.ts           # local library and timestamped sync snapshots
@@ -86,10 +86,18 @@ supabase/schema.sql          # optional account table and row-level policies
 ```
 
 The voicing engine searches string/fret combinations, prunes unplayable spans, supports open and
-muted strings, assigns up to four fingers, detects barres and ranks practical results. The chord
-identifier compares sounding pitch classes against every formula, labels partial matches and uses
-the lowest sounding pitch for the bass. Chord and scale tone names follow interval spelling (for
-example C minor uses E♭); fretboard pitch labels can be switched between sharps and flats.
+muted strings, assigns up to four fingers, detects barres and ranks practical results. Both the
+voicing engine and chord identifier use the lowest *sounding pitch*, not just the first played
+string, for inversions (including in re-entrant tunings). Fingering and playability are conservative
+heuristics, not a guarantee; some valid shapes may be omitted. Chord and scale tone names follow
+interval spelling (for example C minor uses E♭); fretboard pitch labels can be switched between
+sharps and flats.
+
+The shareable `/theory/triads/explore` route accepts root, quality, scale and instrument settings.
+Its optional E/A CAGED examples apply only to major chords in standard six-string tuning; they are
+an introduction, not a complete map. Scale containment is shown as a note relationship rather than
+a promise that scales are interchangeable in every musical context. The two-key application
+challenge saves separately from the lesson checks using the existing local library/sync snapshot.
 
 ## Audio and asset credits
 

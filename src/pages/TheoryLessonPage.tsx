@@ -3,11 +3,21 @@ import { Link, useParams } from 'react-router-dom';
 import { LESSONS, LEVEL_LABELS, LessonBlock } from '@/data/lessons';
 import { getLesson } from '@/data/lessons';
 import { buildChord } from '@core/chords';
-import { chordPath, lessonPath, scalePath } from '@/lib/urls';
+import { chordPath, lessonPath, scalePath, triadStudyPath } from '@/lib/urls';
 import EmptyState from '@/components/EmptyState';
 import GlossaryText from '@/components/GlossaryText';
 import LessonLab from '@/components/LessonLab';
 import LessonChallenge from '@/components/LessonChallenge';
+
+const STUDY_ENTRY: Record<string, { root: string; quality: string; scale?: string; text: string }> = {
+  'notes-pitch-enharmonics': { root: 'C', quality: 'major', text: 'Find the same chord notes in different octaves and on different strings.' },
+  intervals: { root: 'C', quality: 'major', text: 'Hear a third change and follow it from an interval into a chord.' },
+  'major-minor-scales': { root: 'C', quality: 'major', scale: 'major', text: 'See the root, third and fifth inside the surrounding scale.' },
+  triads: { root: 'C', quality: 'major', text: 'Compare major and minor, find their tones, then try the idea in another key.' },
+  'inversions-slash-chords': { root: 'C', quality: 'major', text: 'Change the bass note while the chord tones stay the same.' },
+  'diatonic-harmony': { root: 'C', quality: 'major', scale: 'major', text: 'Explore the I chord as three notes drawn from the major scale.' },
+  modes: { root: 'D', quality: 'minor', scale: 'dorian', text: 'See the D minor chord tones within D Dorian and hear their relationship.' },
+};
 
 function Block({ block }: { block: LessonBlock }) {
   switch (block.kind) {
@@ -100,6 +110,8 @@ export default function TheoryLessonPage() {
   const index = LESSONS.findIndex((l) => l.id === lesson.id);
   const prev = LESSONS[index - 1];
   const next = LESSONS[index + 1];
+  const study = STUDY_ENTRY[lesson.id];
+  const related = (lesson.related ?? []).map(getLesson).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return (
     <div className="page page-narrow">
@@ -118,7 +130,9 @@ export default function TheoryLessonPage() {
         {lesson.blocks.map((block, i) => <Fragment key={i}><Block block={block} />{i === 1 && <LessonLab key={lesson.id} lessonId={lesson.id} />}</Fragment>)}
       </div>
 
+      {study && <section className="lesson-connection" aria-label="Put this idea on the guitar"><div><strong>Put this idea on the guitar</strong><p>{study.text}</p></div><Link className="btn btn-sm" to={triadStudyPath(study.root, study.quality, study.scale)}>Explore the relationship →</Link></section>}
       <LessonChallenge key={lesson.id} lessonId={lesson.id} />
+      {related.length > 0 && <section className="lesson-related" aria-labelledby="related-heading"><p className="eyebrow">KEEP CONNECTING</p><h2 id="related-heading">Related ideas</h2><ul>{related.map((item) => <li key={item.id}><Link to={lessonPath(item.id)}>{item.title} →</Link></li>)}</ul></section>}
       <hr />
       <nav className="spread" aria-label="Lesson navigation">
         {prev ? (

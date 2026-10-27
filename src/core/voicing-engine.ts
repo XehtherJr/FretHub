@@ -50,7 +50,7 @@ export interface VoicingOptions {
   maxSpan?: number;
   maxMuted?: number;
   allowOpen?: boolean;
-  /** Pitch class the lowest sounding string must play (slash chords / inversions). */
+  /** Pitch class of the lowest sounding note (slash chords / inversions). */
   requiredBass?: number;
   /** Additional interval symbols allowed to be omitted beyond the type's defaults. */
   allowedOmissions?: number[];
@@ -106,77 +106,43 @@ interface FingeringResult {
 }
 
 /**
- * Assign left-hand fingers to a concrete fret selection.
- * Returns null when the shape cannot be played with four fingers.
+ * Assign fingers conservatively: individual fretted notes need individual
+ * fingers unless the index finger can barre the lowest fret across them.
+ * This is a playability heuristic, not a substitute for a player's fingering.
  */
 export function assignFingering(
   frets: (number | null)[],
   allowBarre: boolean,
 ): FingeringResult | null {
-  const fingers: Finger[] = frets.map((f) => (f === null ? 'x' : f === 0 ? 0 : 0));
-  const fretted = frets
-    .map((f, i) => ({ f, i }))
-    .filter((x): x is { f: number; i: number } => x.f !== null && x.f > 0);
+  const fingers: Finger[] = frets.map((fret) => fret === null ? 'x' : 0);
+  const fretted = frets.map((fret, i) => ({ fret, i }))
+    .filter((entry): entry is { fret: number; i: number } => entry.fret !== null && entry.fret > 0);
+  if (!fretted.length) return { fingers, fingerCount: 0 };
 
-  if (fretted.length === 0) {
-    return { fingers: frets.map((f) => (f === null ? 'x' : 0)), fingerCount: 0 };
-  }
-
-  const byFret = new Map<number, number[]>();
-  for (const { f, i } of fretted) {
-    const list = byFret.get(f) ?? [];
-    list.push(i);
-    byFret.set(f, list);
-  }
-  const distinctFrets = [...byFret.keys()].sort((a, b) => a - b);
-
+  const lowest = Math.min(...fretted.map((entry) => entry.fret));
+  const lowestIndices = fretted.filter((entry) => entry.fret === lowest).map((entry) => entry.i);
   let barre: BarreInfo | undefined;
-  let usedFingers = 0;
-
+  let coveredCount = 0;
   if (allowBarre) {
-    // A barre is the lowest fret pressed on a contiguous block of >=2 strings,
-    // with every string inside the block fretted at that fret or higher.
-    for (const fret of distinctFrets) {
-      const indices = byFret.get(fret)!;
-      for (let start = 0; start < indices.length; start++) {
-        let end = start;
-        while (
-          end + 1 < indices.length &&
-          indices[end + 1] === indices[end] + 1 &&
-          frets[indices[end] + 1] !== null &&
-          (frets[indices[end] + 1] as number) >= fret
-        ) {
-          end++;
-        }
-        if (end - start + 1 >= 2) {
-          barre = { fret, stringFrom: indices[start], stringTo: indices[end] };
-          break;
-        }
-      }
-      if (barre) break;
+    for (let a = 0; a < lowestIndices.length; a++) for (let b = a + 1; b < lowestIndices.length; b++) {
+      const from = lowestIndices[a];
+      const to = lowestIndices[b];
+      // Conservatively avoid a barre across an open or muted string. Higher
+      // fretted notes between endpoints are fine (as in a standard F shape).
+      if (!frets.slice(from, to + 1).every((fret) => fret !== null && fret >= lowest)) continue;
+      const covered = lowestIndices.filter((index) => index >= from && index <= to).length;
+      if (covered > coveredCount) { barre = { fret: lowest, stringFrom: from, stringTo: to }; coveredCount = covered; }
     }
   }
 
-  if (barre) {
-    for (let i = barre.stringFrom; i <= barre.stringTo; i++) fingers[i] = 1;
-    usedFingers = 1;
-    const higherFrets = distinctFrets.filter((f) => f > barre.fret);
-    if (higherFrets.length > 3) return null;
-    higherFrets.forEach((f, idx) => {
-      const finger = (idx + 2) as Finger;
-      for (const i of byFret.get(f)!) fingers[i] = finger;
-      usedFingers++;
-    });
-  } else {
-    if (distinctFrets.length > 4) return null;
-    distinctFrets.forEach((f, idx) => {
-      const finger = (idx + 1) as Finger;
-      for (const i of byFret.get(f)!) fingers[i] = finger;
-      usedFingers++;
-    });
-  }
-
-  return { fingers, barre, fingerCount: usedFingers };
+  const remaining = fretted.filter(({ fret, i }) => !(barre && fret === barre.fret && i >= barre.stringFrom && i <= barre.stringTo));
+  const fingerCount = remaining.length + (barre ? 1 : 0);
+  if (fingerCount > 4) return null;
+  if (barre) for (let i = barre.stringFrom; i <= barre.stringTo; i++) if (frets[i] === barre.fret) fingers[i] = 1;
+  remaining.sort((a, b) => a.fret - b.fret || a.i - b.i).forEach((entry, index) => {
+    fingers[entry.i] = (index + (barre ? 2 : 1)) as Finger;
+  });
+  return { fingers, barre, fingerCount };
 }
 
 function scoreVoicing(v: Omit<Voicing, 'score' | 'playability'>, rootPc: number): number {
@@ -245,6 +211,15 @@ export function generateVoicings(
   let minFretted = Infinity;
   let maxFretted = -Infinity;
   let bassPc: number | null = null;
+  let bassMidi = Infinity;
+  // Safe pruning for bass constraints: a later string may sound lower than an
+  // earlier one, especially with high frets or re-entrant tunings.
+  const minimumRemainingMidi = new Array<number>(stringCount + 1).fill(Infinity);
+  for (let i = stringCount - 1; i >= 0; i--) {
+    const string = tuning.strings[i];
+    const lowest = Math.min(...perStringCandidates[i].filter((fret) => fret >= 0).map((fret) => fretToMidi(string.pc, string.octave, fret)), Infinity);
+    minimumRemainingMidi[i] = Math.min(lowest, minimumRemainingMidi[i + 1]);
+  }
 
   function dfs(index: number): void {
     if (budgetExceeded) return;
@@ -269,11 +244,6 @@ export function generateVoicings(
         if (newMax - newMin > opts.maxSpan) continue;
       }
 
-      // Bass constraint: the first sounding string must carry the bass.
-      if (!isMuted && bassPc === null && opts.requiredBass !== undefined) {
-        if (fretPc(tuning, index, fret as number) !== normalizePc(opts.requiredBass)) continue;
-      }
-
       // Can the remaining strings possibly cover every still-missing tone?
       const missing = [...toneSet].filter((pc) => !covered.has(pc));
       const stringsLeft = stringCount - index - 1;
@@ -283,21 +253,29 @@ export function generateVoicings(
       // --- apply ----------------------------------------------------------
       current[index] = fret;
       let pc: number | null = null;
+      const previousBassPc = bassPc;
+      const previousBassMidi = bassMidi;
       if (isMuted) {
         mutedCount++;
       } else {
         pc = fretPc(tuning, index, fret as number);
         covered.add(pc);
-        if (bassPc === null) bassPc = pc;
+        const string = tuning.strings[index];
+        const midi = fretToMidi(string.pc, string.octave, fret as number);
+        if (midi < bassMidi) { bassMidi = midi; bassPc = pc; }
         if (candidate !== 0) {
           minFretted = Math.min(minFretted, candidate);
           maxFretted = Math.max(maxFretted, candidate);
         }
       }
 
-      dfs(index + 1);
+      // If the bass is wrong and no remaining string can sound below it,
+      // nothing further down this branch can satisfy the requested inversion.
+      if (opts.requiredBass === undefined || bassPc === null || bassPc === normalizePc(opts.requiredBass) || minimumRemainingMidi[index + 1] < bassMidi) dfs(index + 1);
 
       // --- undo -----------------------------------------------------------
+      bassPc = previousBassPc;
+      bassMidi = previousBassMidi;
       if (isMuted) {
         mutedCount--;
       } else {
@@ -307,10 +285,6 @@ export function generateVoicings(
           (f, i) => i < index && f !== null && fretPc(tuning, i, f) === pc,
         );
         if (!stillCovered) covered.delete(pc as number);
-        if (bassPc === pc) {
-          const earlier = current.findIndex((f, i) => i < index && f !== null);
-          bassPc = earlier >= 0 ? fretPc(tuning, earlier, current[earlier] as number) : null;
-        }
         if (candidate !== 0) {
           const frettedFrets = current.filter((f): f is number => f !== null && f > 0);
           minFretted = frettedFrets.length ? Math.min(...frettedFrets) : Infinity;

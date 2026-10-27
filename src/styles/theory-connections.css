@@ -1,0 +1,33 @@
+/* The curriculum is still organized by level; these are paths between ideas. */
+.theory-connections { margin: 0 0 1.5rem; padding: 1.4rem 1.5rem; border: 1px solid var(--line); background: var(--bg-raised); }
+.theory-connections-intro { display: flex; justify-content: space-between; align-items: end; gap: 1.5rem; }
+.theory-connections-intro h2 { margin-bottom: 0; }
+.theory-connections-intro > p { max-width: 46ch; margin: 0; color: var(--text-dim); font-size: 0.82rem; }
+.theory-connections ol { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; list-style: none; margin: 1.3rem 0 1.2rem; padding: 0; }
+.theory-connections li { min-width: 0; border-top: 1px solid #6a5b45; }
+.theory-connections li a { display: flex; flex-direction: column; gap: 0.18rem; padding: 0.75rem 0.8rem 0.3rem 0; }
+.theory-connections li a:hover strong { color: var(--brass-bright); }
+.theory-connections li span { color: var(--brass); font: 0.68rem var(--font-mono); }
+.theory-connections li strong { color: var(--cream); font-size: 0.84rem; }
+.theory-connections li small { color: var(--text-dim); font-size: 0.73rem; }
+.theory-study-link { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem 1rem; padding: 0.9rem 1rem; background: #25271f; border-left: 2px solid var(--brass); }
+.theory-study-link > div { display: flex; flex-direction: column; }
+.theory-study-link strong { color: var(--cream); font-size: 0.86rem; }
+.theory-study-link span { color: var(--text-dim); font-size: 0.76rem; }
+.lesson-connection { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin: 1.5rem 0; padding: 1rem 1.1rem; border-left: 2px solid var(--brass); background: #25271f; }
+.lesson-connection div { max-width: 55ch; }
+.lesson-connection strong { color: var(--cream); }
+.lesson-connection p { margin: 0.25rem 0 0; color: var(--text-dim); font-size: 0.82rem; }
+.lesson-related { padding: 0.5rem 0; }
+.lesson-related h2 { font-size: 1.1rem; }
+.lesson-related ul { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; }
+.lesson-related a { display: inline-flex; padding: 0.4rem 0.65rem; border: 1px solid var(--line); color: var(--brass-bright); font-size: 0.8rem; }
+.lesson-related a:hover { border-color: var(--brass); }
+.triad-inline-link { margin-left: 0.6rem; font-size: 0.72rem; text-decoration: underline; text-underline-offset: 0.12em; white-space: nowrap; }
+@media (max-width: 760px) {
+  .theory-connections-intro { align-items: start; flex-direction: column; gap: 0.6rem; }
+  .theory-connections ol { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+}
+@media (max-width: 420px) {
+  .theory-connections { padding: 1rem; }
+}

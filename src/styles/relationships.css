@@ -1,0 +1,103 @@
+/* Relationship study: a sequence of focused tasks around the shared instrument. */
+.triad-study-page { max-width: 1320px; }
+.triad-heading { display: flex; justify-content: space-between; align-items: end; gap: 2rem; padding: 0.3rem 0 1.6rem; }
+.triad-heading h1 { font-size: clamp(2rem, 3.6vw, 3.2rem); letter-spacing: -0.045em; }
+.triad-heading .lead { max-width: 58ch; margin-bottom: 0; }
+.triad-heading > span { color: var(--text-faint); font: 0.64rem var(--font-mono); letter-spacing: 0.07em; white-space: nowrap; }
+.triad-heading > span b { color: var(--brass); }
+.triad-foundation { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr); border: 1px solid var(--line); background: var(--bg-raised); }
+.triad-foundation-copy, .triad-foundation-notes { padding: clamp(1.25rem, 2.5vw, 2rem); min-width: 0; }
+.triad-foundation-copy > p:not(.eyebrow):not(.triad-current) { color: var(--text-dim); max-width: 57ch; font-size: 0.88rem; }
+.triad-foundation-copy > p strong { color: var(--cream); }
+.triad-foundation-notes { background: #20221d; border-left: 1px solid var(--line); }
+.triad-pickers { display: flex; gap: 0.75rem; margin: 1.1rem 0 0.5rem; }
+.triad-pickers .field { flex: 1; margin: 0; }
+.triad-current { display: flex; gap: 0.7rem; align-items: baseline; margin: 1.15rem 0 0.9rem; }
+.triad-current strong { color: var(--cream); font-size: 2rem; line-height: 1; }
+.triad-current span { color: var(--text-dim); font-size: 0.84rem; }
+.triad-control-label { color: var(--text-faint); font: 0.68rem var(--font-mono); letter-spacing: 0.07em; margin: 0 0 0.65rem; text-transform: uppercase; }
+.triad-control-label span { color: var(--brass); }
+.triad-tone-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
+.triad-tone { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; padding: 0.85rem; background: #171a17; border: 1px solid #4b4d42; border-radius: 3px; color: var(--text); text-align: left; cursor: pointer; }
+.triad-tone:hover:not(:disabled) { border-color: var(--brass); }
+.triad-tone-0 { border-top: 3px solid var(--brass); }
+.triad-tone-1 { border-top: 3px double #d9c59f; }
+.triad-tone-2 { border-top: 3px solid #d8d3c8; }
+.triad-tone strong { color: var(--cream); font-size: 1.8rem; line-height: 1.1; }
+.triad-tone small { color: var(--text-dim); font-size: 0.73rem; min-height: 2.2em; }
+.triad-tone > span { color: var(--brass-bright); font: 0.75rem var(--font-mono); }
+.triad-comparison { padding-top: 1.1rem; margin-top: 1.15rem; border-top: 1px solid var(--line); }
+.triad-comparison p:not(.triad-control-label) { margin: 0 0 0.3rem; color: var(--cream); font-size: 0.85rem; }
+.triad-comparison small { display: block; color: var(--text-dim); font-size: 0.75rem; }
+.triad-comparison .row { margin-top: 0.8rem; }
+.triad-neck, .triad-shapes, .triad-practice { padding: 2.4rem 0 0; }
+.triad-neck { scroll-margin-top: 68px; }
+.triad-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.1rem; }
+.triad-section-heading h2 { margin: 0; }
+.triad-section-heading > p { max-width: 49ch; margin: 0; color: var(--text-dim); font-size: 0.82rem; }
+.triad-view-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.8rem; padding: 0.85rem 1rem; border: 1px solid var(--line); border-bottom: 0; background: #20231f; }
+.triad-view-buttons { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.triad-scale-select { display: flex; align-items: center; gap: 0.5rem; }
+.triad-scale-select label { margin: 0; white-space: nowrap; }
+.triad-scale-select select { width: auto; max-width: 240px; padding: 0.4rem 0.6rem; font-size: 0.8rem; }
+.triad-instrument { position: relative; margin-left: auto; color: var(--text-dim); font-size: 0.78rem; }
+.triad-instrument summary, .triad-caged summary { color: var(--brass-bright); cursor: pointer; font-weight: 600; }
+.triad-instrument-fields { display: flex; gap: 0.7rem; flex-wrap: wrap; padding: 0.8rem 0 0; }
+.triad-instrument-fields .field { margin: 0; }
+.triad-instrument-fields select { max-width: 250px; padding: 0.4rem 0.55rem; font-size: 0.8rem; }
+.triad-neck-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.9rem 1rem 0.1rem; border: 1px solid var(--line); border-bottom: 0; background: #171916; }
+.triad-neck-caption strong { color: var(--cream); font-size: 0.82rem; }
+.triad-neck-caption span { color: var(--text-dim); font: 0.7rem var(--font-mono); }
+.triad-neck > .fb-scroll { border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: #171916; }
+.triad-neck-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; padding: 0 1rem 1rem; border: 1px solid var(--line); border-top: 0; background: #171916; }
+.triad-neck-foot p { margin: 0; color: var(--text-dim); font-size: 0.77rem; }
+.triad-neck-foot strong { color: var(--brass-bright); }
+.triad-neck-foot a { font-size: 0.8rem; text-decoration: underline; text-underline-offset: 0.15em; }
+.triad-scale-explanation { margin: 0.7rem 0 0; max-width: 85ch; color: var(--text-dim); font-size: 0.8rem; }
+.triad-shape-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 0.45fr); gap: 2rem; align-items: center; padding: 1.3rem 1.5rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--bg-raised); }
+.triad-shape-controls > select { max-width: 300px; }
+.triad-shape-controls > .triad-control-label { margin-top: 1.1rem; }
+.triad-shape-controls > .small { max-width: 60ch; margin: 0.75rem 0; }
+.triad-bass-buttons { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.triad-shape-result { display: grid; justify-items: center; gap: 0.55rem; }
+.triad-shape-result .chord-diagram { width: 145px; }
+.triad-shape-result small { color: var(--text-faint); font-size: 0.68rem; }
+.triad-shape-nav { display: flex; align-items: center; gap: 0.65rem; color: var(--text-dim); font: 0.72rem var(--font-mono); }
+.triad-caged { padding: 1rem 0; border-bottom: 1px solid var(--line-soft); }
+.triad-caged p { max-width: 85ch; color: var(--text-dim); font-size: 0.82rem; margin: 0.8rem 0; }
+.triad-musical-use { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem 2rem; margin-top: 2rem; padding: 1.3rem 1.5rem; border-left: 2px solid var(--brass); background: #24251f; }
+.triad-musical-use > div:first-child { max-width: 62ch; }
+.triad-musical-use h2 { font-size: 1.15rem; }
+.triad-musical-use p:not(.eyebrow) { margin: 0; color: var(--text-dim); font-size: 0.84rem; }
+.triad-practice-start { display: flex; align-items: center; flex-wrap: wrap; gap: 0.8rem; padding: 1.2rem; border: 1px solid var(--line); background: var(--bg-raised); }
+.triad-practice-start span { color: var(--text-dim); font-size: 0.8rem; }
+.triad-task-head { display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding: 1.2rem 1.2rem 0; background: var(--bg-raised); border: 1px solid var(--line); border-bottom: 0; }
+.triad-task-head h3 { margin: 0.45rem 0; }
+.triad-task-head p { margin: 0; color: var(--text-dim); font-size: 0.84rem; }
+.triad-task-head strong { color: var(--cream); }
+.triad-task-step { color: var(--brass-bright); font: 0.68rem var(--font-mono); letter-spacing: 0.06em; }
+.triad-practice > .fb-scroll { background: var(--bg-raised); border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+.triad-practice > .fb-scroll + p { padding: 0 1.2rem 1rem; margin: 0; background: var(--bg-raised); border: 1px solid var(--line); border-top: 0; }
+.triad-task-feedback { margin: 0.8rem 0; color: #e1b2a3; font-size: 0.86rem; }
+.triad-task-feedback.correct { color: #c2d3b8; }
+.triad-task-finish p { color: var(--text-dim); font-size: 0.84rem; }
+.triad-next-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem 1.2rem; padding: 1.4rem 0; margin-top: 2.5rem; border-top: 1px solid var(--line); }
+.triad-next-links span { color: var(--text-faint); font: 0.66rem var(--font-mono); letter-spacing: 0.08em; }
+.triad-next-links a { font-size: 0.82rem; text-decoration: underline; text-underline-offset: 0.15em; }
+@media (max-width: 800px) {
+  .triad-heading, .triad-section-heading { align-items: start; flex-direction: column; gap: 0.65rem; }
+  .triad-heading > span { display: none; }
+  .triad-foundation { grid-template-columns: 1fr; }
+  .triad-foundation-notes { border-left: 0; border-top: 1px solid var(--line); }
+  .triad-instrument { flex-basis: 100%; margin-left: 0; }
+}
+@media (max-width: 520px) {
+  .triad-shape-layout { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
+  .triad-shape-result { justify-items: start; }
+  .triad-tone { padding: 0.65rem 0.5rem; }
+  .triad-tone strong { font-size: 1.5rem; }
+  .triad-view-bar { align-items: start; flex-direction: column; }
+  .triad-scale-select { flex-wrap: wrap; }
+  .triad-task-head { flex-wrap: wrap; }
+  .triad-musical-use { padding: 1rem; }
+}

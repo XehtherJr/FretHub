@@ -7,6 +7,7 @@ import ChordDetailPage from './pages/ChordDetailPage';
 import FretboardPage from './pages/FretboardPage';
 import TheoryIndexPage from './pages/TheoryIndexPage';
 import TheoryLessonPage from './pages/TheoryLessonPage';
+import TriadStudyPage from './pages/TriadStudyPage';
 import ScalesPage from './pages/ScalesPage';
 import ProgressionsPage from './pages/ProgressionsPage';
 import PracticePage from './pages/PracticePage';
@@ -16,10 +17,10 @@ import LibraryPage from './pages/LibraryPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 function ScrollToTop() {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [pathname, search]);
+  }, [pathname]);
   return null;
 }
 
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="chords/:root/:type" element={<ChordDetailPage />} />
           <Route path="fretboard" element={<FretboardPage />} />
           <Route path="theory" element={<TheoryIndexPage />} />
+          <Route path="theory/triads/explore" element={<TriadStudyPage />} />
           <Route path="theory/:lessonId" element={<TheoryLessonPage />} />
           <Route path="scales" element={<ScalesPage />} />
           <Route path="scales/:scaleId" element={<ScalesPage />} />

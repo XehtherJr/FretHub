@@ -45,6 +45,7 @@
 .lesson-tone-list strong, .lesson-scale-notes strong { color: var(--cream); font-size: 1.05rem; }
 .lesson-tone-list small, .lesson-scale-notes small { color: var(--brass-bright); font-size: 0.68rem; }
 .lesson-scale-notes span:first-child, .lesson-scale-notes span:last-child { border-color: var(--brass); }
+.lesson-scale-notes .mode-characteristic { border: 2px solid var(--brass-bright); background: #342f24; }
 .lesson-wheel { position: relative; width: min(300px, 100%); aspect-ratio: 1; margin: 1rem auto; border: 1px solid #555749; border-radius: 50%; }
 .lesson-wheel button { position: absolute; transform: translate(-50%, -50%); width: 36px; height: 36px; border: 1px solid #666a5d; border-radius: 50%; color: var(--text); background: #20231e; cursor: pointer; font-size: 0.8rem; font-weight: 700; }
 .lesson-wheel button[aria-pressed='true'] { background: var(--brass); border-color: var(--brass); color: #231b10; }

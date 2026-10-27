@@ -6,8 +6,9 @@ import { SCALE_TYPES, ScaleCategory, buildScale, buildArpeggio, getScaleType, sc
 import { getTuning } from '@core/tunings';
 import { fretPc } from '@core/voicing-engine';
 import { noteToPc, pcToNote, pcOctaveToMidi, ROOT_NOTES } from '@core/notes';
-import { playMidi, isAudioSupported, getAudioContext } from '@core/audio';
-import { scalePath } from '@/lib/urls';
+import { playSequence, isAudioSupported } from '@core/audio';
+import { scalePath, triadStudyPath } from '@/lib/urls';
+import { qualityForTriadIntervals } from '@core/triadRelationships';
 
 const CATEGORY_LABELS: Record<ScaleCategory, string> = {
   major: 'Major & minor', minor: 'Major & minor', mode: 'Modes',
@@ -54,8 +55,6 @@ export default function ScalesPage() {
   }, [notes, arp, showArpeggio, tuning, fretCount, rootPc, root]);
 
   const playScale = () => {
-    const audio = getAudioContext();
-    const start = audio.currentTime + 0.05;
     let octave = 4;
     let previous = -1;
     const run = notes.map((note) => {
@@ -66,7 +65,7 @@ export default function ScalesPage() {
     // The starting tonic is in octave 4, so its closing octave is always 5,
     // even when the scale crosses C before reaching its final note.
     run.push(pcOctaveToMidi(rootPc, 5));
-    run.forEach((midi, index) => playMidi(midi, { when: start + index * 0.32, duration: 0.7 }));
+    playSequence(run, 0.32, 0.7);
   };
 
   const changeRoot = (note: string) => {
@@ -135,6 +134,7 @@ export default function ScalesPage() {
               <select className="scale-fret-select" value={fretCount} onChange={(event) => setFretCount(Number(event.target.value))} aria-label="Frets shown">
                 {[12, 15, 22, 24].map((fret) => <option key={fret} value={fret}>{fret} frets</option>)}
               </select>
+              {qualityForTriadIntervals(triadIntervals) && <Link className="btn btn-sm" to={triadStudyPath(root, qualityForTriadIntervals(triadIntervals), scaleId, { frets: fretCount })}>Study the root triad →</Link>}
             </div>
             {showArpeggio && <p className="scale-triad-copy">Outlined notes form the root triad ({triadIntervals.join(' · ')}): {arp.slice(0, triadIntervals.length).map((note) => note.name).join(' · ')}.</p>}
           </section>

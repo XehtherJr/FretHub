@@ -9,7 +9,8 @@ import { identifyChord, describeMatch } from '@core/chord-identifier';
 import { buildChord } from '@core/chords';
 import { buildScale, buildArpeggio, scaleTriadIntervals, SCALE_TYPES } from '@core/scales';
 import { playMidi, strum, isAudioSupported } from '@core/audio';
-import { chordPath, scalePath } from '@/lib/urls';
+import { chordPath, scalePath, triadStudyPath } from '@/lib/urls';
+import { qualityForTriadIntervals } from '@core/triadRelationships';
 
 interface SelectedNote { fret: number; pc: number; }
 
@@ -323,7 +324,7 @@ export default function FretboardPage() {
             <div className="wb-result-heading"><div><p className="wb-section-kicker">SCALE STUDY</p><h2>{displayScaleRoot} {scaleType.name}</h2></div><span>{scaleType.stepFormula}</span></div>
             <p className="wb-empty-copy">{scaleType.description}</p>
             {lastAudition && <p className="wb-match-note">Last note: {pcToNote(lastAudition.pc, preferFlats)} · string {tuning.strings.length - lastAudition.stringIndex} · {lastAudition.fret === 0 ? 'open' : `fret ${lastAudition.fret}`}</p>}
-            <Link className="text-link" to={scalePath(scaleId, displayScaleRoot)}>Open in scale library <Icon name="arrow" /></Link>
+            <div className="row"><Link className="text-link" to={scalePath(scaleId, displayScaleRoot)}>Open in scale library <Icon name="arrow" /></Link>{qualityForTriadIntervals(triadIntervals) && <Link className="text-link" to={triadStudyPath(displayScaleRoot, qualityForTriadIntervals(triadIntervals), scaleId, { tuning: tuningId, capo, frets: fretCount })}>Study its root triad <Icon name="arrow" /></Link>}</div>
           </section>
         </div>
       )}

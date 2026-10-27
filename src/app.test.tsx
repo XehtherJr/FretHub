@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
-import { playClick, playMidi, strum } from '@core/audio';
+import { playClick, playMidi, playSequence, strum } from '@core/audio';
 import { applyLibrarySnapshot, emptySnapshot, getNote } from '@core/storage';
 
 // jsdom has no Web Audio implementation; pretend support so playback controls render.
@@ -10,6 +10,7 @@ vi.mock('@core/audio', () => ({
   isAudioSupported: () => true,
   getAudioContext: () => ({ get currentTime() { return Date.now() / 1000; }, state: 'running', resume: () => {} }),
   playMidi: vi.fn(),
+  playSequence: vi.fn(),
   strum: vi.fn(),
   playClick: vi.fn(),
 }));
@@ -189,7 +190,7 @@ describe('application routing and rendering', () => {
     expect(screen.getByText(/D Dorian/)).toBeTruthy();
     expect(screen.getByRole('img', { name: /D Dorian scale pattern/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Play ascending/ }));
-    expect(vi.mocked(playMidi).mock.calls.map(([midi]) => midi)).toEqual([62, 64, 65, 67, 69, 71, 72, 74]);
+    expect(playSequence).toHaveBeenCalledWith([62, 64, 65, 67, 69, 71, 72, 74], 0.32, 0.7);
   });
 
   it('renders the progression explorer with diatonic table', () => {
