@@ -100,12 +100,11 @@ function ScaleLab() {
   const [type, setType] = useState('major');
   const notes = buildScale('C', type);
   const scale = SCALE_TYPES.find((entry) => entry.id === type)!;
-  const preferFlats = type !== 'major';
   const play = () => playSequence([...notes.map((note) => 60 + ((note.pc + 12) % 12)), 72], 0.3, 0.65);
   return <LabFrame kicker="SCALE STEPPER" title="Compare two paths from C">
     <p className="small muted">A scale is a set of notes in order. Compare the major and natural minor patterns, then listen.</p>
     <div className="row lesson-choice-row"><button type="button" className="btn btn-sm" aria-pressed={type === 'major'} onClick={() => setType('major')}>C major</button><button type="button" className="btn btn-sm" aria-pressed={type === 'natural-minor'} onClick={() => setType('natural-minor')}>C natural minor</button></div>
-    <div className="lesson-scale-notes">{notes.map((note) => <span key={note.degree}><small>{note.degree}</small><strong>{pcToNote(note.pc, preferFlats)}</strong></span>)}<span><small>8</small><strong>C</strong></span></div>
+    <div className="lesson-scale-notes">{notes.map((note) => <span key={note.degree}><small>{note.degree}</small><strong>{note.name}</strong></span>)}<span><small>8</small><strong>C</strong></span></div>
     <p className="small muted">Steps: {scale.stepFormula.replaceAll('W', 'whole').replaceAll('H', 'half').replaceAll('–', ' · ')}</p>
     <div className="row"><button type="button" className="btn btn-primary btn-sm" disabled={!isAudioSupported()} onClick={play}>Hear the scale</button><Link className="text-link" to={scalePath(type, 'C')}>Explore the scale →</Link></div>
   </LabFrame>;

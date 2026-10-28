@@ -3,9 +3,9 @@ import { buildChord } from './chords';
 import { intervalSemitones } from './intervals';
 import { ROOT_NOTES } from './notes';
 import { buildScale } from './scales';
-import { getTuning } from './tunings';
+import { getTuning, TUNINGS } from './tunings';
 import { fretPc } from './voicing-engine';
-import { cagedMajorPositions, changesFromMajor, neckPositions, qualityForTriadIntervals, sameRootScalesContaining, thirdTask } from './triadRelationships';
+import { cagedMajorPositions, changesFromMajor, neckPositions, qualityForTriadIntervals, sameRootScalesContaining, thirdFretFromRoot, thirdTask, thirdTransferPlan } from './triadRelationships';
 
 describe('triad relationships', () => {
   it('compares interval roles and uses interval-correct spelling', () => {
@@ -69,6 +69,27 @@ describe('triad relationships', () => {
     }
     expect(cagedMajorPositions(buildChord('C', 'minor'), tuning, 0, 'E')).toBeNull();
     expect(cagedMajorPositions(buildChord('C', 'major'), getTuning('drop-d'), 0, 'E')).toBeNull();
+  });
+
+  it('makes both the root and third reachable across tunings, keys and capo settings', () => {
+    for (const tuning of TUNINGS) for (const root of [...ROOT_NOTES, 'Db', 'Eb', 'Cb', 'Fb', 'E#', 'B#']) {
+      for (const quality of ['major', 'minor', 'diminished', 'augmented']) for (const capo of [0, 1, 2, 3, 4, 5, 6, 7]) {
+        const chord = buildChord(root, quality);
+        const plan = thirdTransferPlan(chord, tuning, capo, 12);
+        expect(plan, `${root} ${quality}, ${tuning.id}, capo ${capo}`).not.toBeNull();
+        expect(plan!.first.stringIndex).not.toBe(plan!.second.stringIndex);
+        for (const [current, task] of [[chord, plan!.first], [plan!.transferChord, plan!.second]] as const) {
+          const physicalRoot = task.rootFret === 0 ? capo : task.rootFret;
+          expect(fretPc(tuning, task.stringIndex, physicalRoot)).toBe(current.rootPc);
+          expect(fretPc(tuning, task.stringIndex, task.thirdFret)).toBe(current.tones[1].pc);
+          expect(thirdFretFromRoot(task.rootFret, capo, plan!.fretCount, intervalSemitones(current.tones[1].interval))).toBe(task.thirdFret);
+          expect(task.thirdFret).toBeGreaterThanOrEqual(task.minimumFret);
+        }
+      }
+    }
+    const highCapo = thirdTransferPlan(buildChord('C#', 'major'), getTuning('standard'), 7, 12)!;
+    expect(highCapo.fretCount).toBeGreaterThan(12);
+    expect(thirdTransferPlan(buildChord('Cb', 'minor'), getTuning('standard'), 0, 12)!.transferChord.rootName).toBe('Fb');
   });
 
   it('creates reachable third-finding tasks that transfer to a different key and string', () => {

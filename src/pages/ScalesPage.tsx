@@ -5,7 +5,7 @@ import Icon from '@/components/Icon';
 import { SCALE_TYPES, ScaleCategory, buildScale, buildArpeggio, getScaleType, scaleTriadIntervals } from '@core/scales';
 import { getTuning } from '@core/tunings';
 import { fretPc } from '@core/voicing-engine';
-import { noteToPc, pcToNote, pcOctaveToMidi, ROOT_NOTES } from '@core/notes';
+import { normalizeNoteName, noteToPc, pcToNote, pcOctaveToMidi, ROOT_NOTES } from '@core/notes';
 import { playSequence, isAudioSupported } from '@core/audio';
 import { scalePath, triadStudyPath } from '@/lib/urls';
 import { qualityForTriadIntervals } from '@core/triadRelationships';
@@ -17,7 +17,7 @@ const CATEGORY_LABELS: Record<ScaleCategory, string> = {
 
 function validRoot(value: string | null): string {
   if (!value) return 'C';
-  try { noteToPc(value); return value; } catch { return 'C'; }
+  try { return normalizeNoteName(value); } catch { return 'C'; }
 }
 
 export default function ScalesPage() {
@@ -48,7 +48,8 @@ export default function ScalesPage() {
       for (let fret = 0; fret <= fretCount; fret++) {
         const pc = fretPc(tuning, stringIndex, fret);
         if (!scalePcs.has(pc)) continue;
-        out.push({ stringIndex, fret, variant: pc === rootPc ? 'root' : showArpeggio && arpPcs.has(pc) ? 'cool' : 'scale', label: pcToNote(pc, root.includes('b')) });
+        const note = notes.find((entry) => entry.pc === pc)!;
+        out.push({ stringIndex, fret, variant: pc === rootPc ? 'root' : showArpeggio && arpPcs.has(pc) ? 'cool' : 'scale', label: note.name, description: `${note.name}, ${note.intervalName} of ${root}` });
       }
     });
     return out;
@@ -124,6 +125,7 @@ export default function ScalesPage() {
                   return <button key={note} type="button" className="btn btn-sm" aria-pressed={noteToPc(root) === noteToPc(note)} onClick={() => changeRoot(displayNote)}>{displayNote}</button>;
                 })}
               </div>
+              {root !== pcToNote(rootPc) && root !== pcToNote(rootPc, true) && <p className="small muted">{root} sounds like {pcToNote(rootPc)} here; the root buttons use common enharmonic names.</p>}
             </div>
             <div className="scale-tone-line" aria-label={`Notes in ${root} ${type.name}`}>
               {notes.map((note) => <div key={note.interval} title={note.intervalName}><span className={`note-chip ${note.interval === '1' ? 'root' : ''}`}>{note.name}</span><small>{note.interval}</small></div>)}

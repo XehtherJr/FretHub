@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { type BuiltChord } from '@core/chords';
+import { buildChord, type BuiltChord } from '@core/chords';
 import { strum, isAudioSupported } from '@core/audio';
 import { applyCapo, type Tuning } from '@core/tunings';
 import { fretPc, generateVoicings } from '@core/voicing-engine';
@@ -78,11 +78,12 @@ export default function TriadVoicings({ chord, tuning, capo, fretCount, onShow }
           {chord.tones.map((tone, index) => <button type="button" key={tone.interval} className="btn btn-sm" aria-pressed={bassIndex === index} onClick={() => { setBassIndex(index); setShapeIndex(0); }}>{['Root', 'Third', 'Fifth'][index]} · {tone.name}</button>)}
         </div>
         <p className="small muted">{bassIndex === 0 ? 'Root in the bass: root position.' : bassIndex === 1 ? 'Third in the bass: first inversion.' : 'Fifth in the bass: second inversion.'} This describes the lowest pitch, not the shape’s position on the neck. Some shapes double notes; pluck the sounded strings when a shape skips strings.</p>
+        <p className="small muted">Finger numbers are suggestions, not guarantees of comfort or playability. Other fingerings can work, and some valid shapes may not be shown.</p>
         {selected ? <div className="row"><button type="button" className="btn btn-primary btn-sm" disabled={!isAudioSupported()} onClick={() => strum(selected.midi)}>Hear this voicing</button><button type="button" className="btn btn-sm" onClick={showVoicing}>Show shape on neck ↑</button></div>
-          : <p className="small muted" role="status">No playable voicing found in this range with that bass. Try another range or bass note.</p>}
+          : <p className="small muted" role="status">No voicing was generated in this range with that bass. Try another range or bass note.</p>}
       </div>
       <div className="triad-shape-result">
-        {selected && <><ChordDiagram voicing={selected} tuning={capoTuning} name={chord.shortName} rootPc={chord.rootPc} showNotes={false} /><div className="triad-shape-nav"><button type="button" className="btn btn-sm" disabled={currentIndex <= 0} onClick={() => setShapeIndex(currentIndex - 1)} aria-label="Previous voicing">←</button><span>{currentIndex + 1} / {shapes.length}</span><button type="button" className="btn btn-sm" disabled={currentIndex >= shapes.length - 1} onClick={() => setShapeIndex(currentIndex + 1)} aria-label="Next voicing">→</button></div><small>{capo ? `Chart frets are relative to capo ${capo}.` : '× = skip · O = open string'}</small></>}
+        {selected && <><ChordDiagram voicing={selected} tuning={capoTuning} name={buildChord(chord.rootName, chord.typeId, selected.bassPc ?? undefined).shortName} rootPc={chord.rootPc} showNotes={false} /><div className="triad-shape-nav"><button type="button" className="btn btn-sm" disabled={currentIndex <= 0} onClick={() => setShapeIndex(currentIndex - 1)} aria-label="Previous voicing">←</button><span>{currentIndex + 1} / {shapes.length}</span><button type="button" className="btn btn-sm" disabled={currentIndex >= shapes.length - 1} onClick={() => setShapeIndex(currentIndex + 1)} aria-label="Next voicing">→</button></div><small>× = skip · O = open{capo ? ` at capo ${capo}; chart frets are relative to it` : ''}. Dots show suggested fingers: 1 index through 4 little finger.</small></>}
       </div>
     </div>
     {chord.typeId === 'major' && tuning.id === 'standard' && <details className="triad-caged">

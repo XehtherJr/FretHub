@@ -5,7 +5,7 @@
  */
 
 import {
-  noteToPc, pcToNote, transposePc, normalizePc, NoteName,
+  noteToPc, pcToNote, transposePc, normalizePc, normalizeNoteName, NoteName,
 } from './notes';
 import { intervalSemitones, getInterval, spellInterval } from './intervals';
 import { ChordType, CHORD_TYPES, getChordType } from './chord-definitions';
@@ -13,7 +13,7 @@ import { ChordType, CHORD_TYPES, getChordType } from './chord-definitions';
 export interface ChordTone {
   /** Pitch class 0..11. */
   pc: number;
-  /** Note name spelled according to the root's sharp/flat preference. */
+  /** Note name spelled by its written interval above the root. */
   name: NoteName;
   /** Interval symbol relative to the root, e.g. "b7". */
   interval: string;
@@ -42,7 +42,7 @@ export interface BuiltChord {
   isInversion: boolean;
 }
 
-/** Chord categories that conventionally use flat spellings in some keys. */
+/** Default spelling for a non-chord bass given only as a pitch class. */
 function shouldUseFlats(rootName: NoteName): boolean {
   return rootName.includes('b');
 }
@@ -53,7 +53,7 @@ export function buildChord(
   bass?: NoteName | number,
 ): BuiltChord {
   const rootPc = typeof root === 'number' ? normalizePc(root) : noteToPc(root);
-  const rootName = pcToNote(rootPc, typeof root === 'string' && shouldUseFlats(root));
+  const rootName = typeof root === 'string' ? normalizeNoteName(root) : pcToNote(rootPc);
   const type: ChordType = getChordType(typeId);
   const preferFlats = shouldUseFlats(rootName);
 
@@ -70,7 +70,10 @@ export function buildChord(
   const bassPc = bass === undefined
     ? rootPc
     : typeof bass === 'number' ? normalizePc(bass) : noteToPc(bass);
-  const bassName = pcToNote(bassPc, preferFlats);
+  // A chord tone's interval spelling determines its slash name: C minor's
+  // third is Eb, not D#, even if the input bass was provided as a pitch class.
+  const bassName = bassPc === rootPc ? rootName : tones.find((tone) => tone.pc === bassPc)?.name
+    ?? (typeof bass === 'string' ? normalizeNoteName(bass) : pcToNote(bassPc, preferFlats));
 
   const symbol = type.symbols[0];
   const shortName = `${rootName}${symbol}`;
@@ -89,7 +92,18 @@ export function buildChord(
     pitchClasses: tones.map((t) => t.pc),
     bassPc,
     bassName,
-    isInversion: bassPc !== rootPc,
+    isInversion: bassPc !== rootPc && tones.some((tone) => tone.pc === bassPc),
+  };
+}
+
+/** Share the type's real voicing constraints with every generator entry point. */
+export function chordVoicingConstraints(chord: BuiltChord): { allowedOmissions: number[]; requiredOneOf: number[]; requiredVoicing?: number[] } {
+  const type = getChordType(chord.typeId);
+  const toPc = (symbol: string) => transposePc(chord.rootPc, intervalSemitones(symbol));
+  return {
+    allowedOmissions: (type.omittable ?? []).map(toPc),
+    requiredOneOf: (type.requireOneOf ?? []).map(toPc),
+    requiredVoicing: type.voicingPattern,
   };
 }
 

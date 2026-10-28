@@ -11,6 +11,7 @@
 
 import { normalizePc, fretToMidi } from './notes';
 import { Tuning } from './tunings';
+import { matchesVoicingPattern } from './voicingPattern';
 
 export type Finger = 0 | 1 | 2 | 3 | 4 | 'x';
 
@@ -52,15 +53,19 @@ export interface VoicingOptions {
   allowOpen?: boolean;
   /** Pitch class of the lowest sounding note (slash chords / inversions). */
   requiredBass?: number;
-  /** Additional interval symbols allowed to be omitted beyond the type's defaults. */
+  /** Chord-tone pitch classes allowed to be omitted. */
   allowedOmissions?: number[];
+  /** At least one of these pitch classes must sound when supplied. */
+  requiredOneOf?: number[];
+  /** Exact ascending semitone offsets from the lowest/root note, for a specific voicing. */
+  requiredVoicing?: number[];
   maxResults?: number;
   allowBarre?: boolean;
   /** Hard safety cap on DFS nodes to guarantee fast responses. */
   nodeBudget?: number;
 }
 
-const DEFAULTS: Required<Omit<VoicingOptions, 'requiredBass' | 'allowedOmissions'>> = {
+const DEFAULTS: Required<Omit<VoicingOptions, 'requiredBass' | 'allowedOmissions' | 'requiredOneOf' | 'requiredVoicing'>> = {
   minFret: 0,
   maxFret: 14,
   maxSpan: 4,
@@ -186,6 +191,7 @@ export function generateVoicings(
   const opts = { ...DEFAULTS, ...options };
   const toneSet = new Set(chordPcs.map(normalizePc));
   const omissions = new Set((options.allowedOmissions ?? []).map(normalizePc));
+  const requiredOneOf = new Set((options.requiredOneOf ?? []).map(normalizePc));
   const stringCount = tuning.strings.length;
 
   // Which tones are legally allowed to be missing at a leaf?
@@ -304,6 +310,12 @@ export function generateVoicings(
       if (!covered.has(pc) && !canOmit(pc)) return;
     }
     if (opts.requiredBass !== undefined && bassPc !== normalizePc(opts.requiredBass)) return;
+    if (requiredOneOf.size && ![...requiredOneOf].some((pc) => covered.has(pc))) return;
+
+    const midi = current.map((f, i) =>
+      f === null ? null : fretToMidi(tuning.strings[i].pc, tuning.strings[i].octave, f),
+    );
+    if (options.requiredVoicing && !matchesVoicingPattern(midi.filter((n): n is number => n !== null), rootPc, options.requiredVoicing)) return;
 
     const fingering = assignFingering(current, opts.allowBarre);
     if (!fingering) return;
@@ -316,9 +328,6 @@ export function generateVoicings(
     if (seen.has(key)) return;
     seen.add(key);
 
-    const midi = current.map((f, i) =>
-      f === null ? null : fretToMidi(tuning.strings[i].pc, tuning.strings[i].octave, f),
-    );
     const pitchClasses = current.map((f, i) =>
       f === null ? null : fretPc(tuning, i, f),
     );

@@ -35,6 +35,8 @@ interface FretboardProps {
   onToggle?: (stringIndex: number, fret: number, pc: number) => void;
   selectedKeys?: Set<string>;
   showNoteNames?: boolean;
+  /** Reveal explicit markers without revealing the names of unmarked notes. */
+  showMarkerLabels?: boolean;
   showFretNumbers?: boolean;
   preferFlats?: boolean;
   ariaLabel?: string;
@@ -60,6 +62,7 @@ export default function Fretboard({
   onToggle,
   selectedKeys,
   showNoteNames = true,
+  showMarkerLabels = showNoteNames,
   showFretNumbers = true,
   preferFlats = false,
   ariaLabel = 'Guitar fretboard',
@@ -143,7 +146,7 @@ export default function Fretboard({
       height: `${STRING_GAP}px`,
     };
     const note = marker ? (
-      <span className={`fb-note v-${marker.variant ?? 'tone'}`} aria-hidden="true">{showNoteNames ? label : ''}</span>
+      <span className={`fb-note v-${marker.variant ?? 'tone'}`} aria-hidden="true">{showMarkerLabels ? label : ''}</span>
     ) : open && showNoteNames ? (
       <span className="fb-open-note" aria-hidden="true">{noteName}</span>
     ) : showNoteNames && interactive ? (
@@ -167,7 +170,7 @@ export default function Fretboard({
         data-position={key}
         disabled={!isPlayable(fret)}
         tabIndex={key === effectiveFocusKey ? 0 : -1}
-        aria-label={`${positionLabel}${marker?.description ? `, ${marker.description}` : ''}${marker?.label && showNoteNames ? `, marker ${marker.label}` : ''}${interaction === 'play' ? ', play note' : marker ? ', selected' : ''}`}
+        aria-label={`${positionLabel}${marker?.description ? `, ${marker.description}` : ''}${marker?.label && showMarkerLabels ? `, marker ${marker.label}` : ''}${interaction === 'play' ? ', play note' : marker ? ', selected' : ''}`}
         aria-pressed={interaction === 'select' ? !!marker : undefined}
         onFocus={() => setFocusKey(key)}
         onKeyDown={(event) => handleNavigation(event, stringIndex, fret)}

@@ -17,6 +17,8 @@
 .triad-current span { color: var(--text-dim); font-size: 0.84rem; }
 .triad-control-label { color: var(--text-faint); font: 0.68rem var(--font-mono); letter-spacing: 0.07em; margin: 0 0 0.65rem; text-transform: uppercase; }
 .triad-control-label span { color: var(--brass); }
+.triad-control-label .triad-root-spelling { text-transform: none; }
+.triad-spelling-help { margin: 0.75rem 0 0; color: var(--text-dim); font-size: 0.76rem; }
 .triad-tone-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.45rem; }
 .triad-tone { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; padding: 0.85rem; background: #171a17; border: 1px solid #4b4d42; border-radius: 3px; color: var(--text); text-align: left; cursor: pointer; }
 .triad-tone:hover:not(:disabled) { border-color: var(--brass); }
@@ -48,6 +50,7 @@
 .triad-neck-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.9rem 1rem 0.1rem; border: 1px solid var(--line); border-bottom: 0; background: #171916; }
 .triad-neck-caption strong { color: var(--cream); font-size: 0.82rem; }
 .triad-neck-caption span { color: var(--text-dim); font: 0.7rem var(--font-mono); }
+.triad-board-guide { margin: 0; padding: 0.6rem 1rem 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: #171916; color: var(--text-dim); font-size: 0.78rem; }
 .triad-neck > .fb-scroll { border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: #171916; }
 .triad-neck-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; padding: 0 1rem 1rem; border: 1px solid var(--line); border-top: 0; background: #171916; }
 .triad-neck-foot p { margin: 0; color: var(--text-dim); font-size: 0.77rem; }
@@ -76,6 +79,10 @@
 .triad-task-head p { margin: 0; color: var(--text-dim); font-size: 0.84rem; }
 .triad-task-head strong { color: var(--cream); }
 .triad-task-step { color: var(--brass-bright); font: 0.68rem var(--font-mono); letter-spacing: 0.06em; }
+.triad-task-guide { padding: 0.9rem 1.2rem 0.3rem; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--bg-raised); }
+.triad-task-guide p { max-width: 88ch; color: var(--text-dim); font-size: 0.82rem; margin: 0 0 0.65rem; }
+.triad-task-guide strong { color: var(--cream); }
+.triad-task-guide .btn { margin: 0 0.5rem 0.5rem 0; }
 .triad-practice > .fb-scroll { background: var(--bg-raised); border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 .triad-practice > .fb-scroll + p { padding: 0 1.2rem 1rem; margin: 0; background: var(--bg-raised); border: 1px solid var(--line); border-top: 0; }
 .triad-task-feedback { margin: 0.8rem 0; color: #e1b2a3; font-size: 0.86rem; }

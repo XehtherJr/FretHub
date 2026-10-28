@@ -6,7 +6,7 @@
  * fifth), "b7" (minor seventh), "9" (compound major second), etc.
  */
 
-import { normalizePc, noteToPc } from './notes';
+import { normalizeNoteName, noteToPc } from './notes';
 
 export interface IntervalDef {
   /** Formula symbol, e.g. "b3", "#11". */
@@ -55,14 +55,18 @@ export function getInterval(symbol: string): IntervalDef {
 /** Spell the correct letter for an interval (C + b3 = Eb, not D#). */
 export function spellInterval(rootName: string, symbol: string): string {
   const letters = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-  const rootLetter = rootName[0]?.toUpperCase();
-  const rootIndex = letters.indexOf(rootLetter);
-  if (rootIndex < 0) throw new Error(`Unknown root note: "${rootName}"`);
+  const root = normalizeNoteName(rootName);
+  const rootIndex = letters.indexOf(root[0]);
   const interval = getInterval(symbol);
-  const letter = letters[(rootIndex + interval.degree - 1) % letters.length];
-  const target = normalizePc(noteToPc(rootName) + interval.semitones);
-  const natural = noteToPc(letter);
-  const difference = ((target - natural + 18) % 12) - 6;
+  const letterIndex = rootIndex + interval.degree - 1;
+  const letter = letters[letterIndex % letters.length];
+  const accidental = root.slice(1);
+  const shift = accidental.startsWith('#') ? accidental.length : -accidental.length;
+  // Keep the diatonic octave while calculating the accidental. Reducing to a
+  // pitch class here would turn an extreme written sharp into a flat instead.
+  const target = noteToPc(root[0]) + shift + interval.semitones;
+  const natural = noteToPc(letter) + 12 * Math.floor(letterIndex / letters.length);
+  const difference = target - natural;
   return letter + (difference > 0 ? '#'.repeat(difference) : 'b'.repeat(-difference));
 }
 

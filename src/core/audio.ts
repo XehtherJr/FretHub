@@ -32,7 +32,7 @@ export function getAudioContext(): AudioContext {
     master.connect(limiter);
     limiter.connect(ctx.destination);
   }
-  if (ctx.state === 'suspended') void ctx.resume();
+  if (ctx.state === 'suspended') void ctx.resume().catch(() => { /* A later user gesture may resume it. */ });
   return ctx;
 }
 
@@ -92,7 +92,7 @@ interface PluckOptions {
   velocity?: number;
 }
 
-function playSample(audio: AudioContext, buffer: AudioBuffer, samplePitch: number, midi: number, options: PluckOptions): void {
+function playSample(audio: AudioContext, buffer: AudioBuffer, samplePitch: number, midi: number, options: PluckOptions): AudioBufferSourceNode {
   const when = Math.max(audio.currentTime, options.when ?? audio.currentTime);
   const rate = samplePlaybackRate(midi, samplePitch);
   const duration = Math.min(options.duration ?? 2.8, buffer.duration / rate);
@@ -109,10 +109,11 @@ function playSample(audio: AudioContext, buffer: AudioBuffer, samplePitch: numbe
   env.connect(master as GainNode);
   source.start(when);
   source.stop(when + duration + 0.01);
+  return source;
 }
 
 /** Offline fallback for an unavailable sample, not the primary instrument. */
-function playSynth(audio: AudioContext, midi: number, options: PluckOptions): void {
+function playSynth(audio: AudioContext, midi: number, options: PluckOptions): OscillatorNode {
   const when = Math.max(audio.currentTime, options.when ?? audio.currentTime);
   const duration = options.duration ?? 1.6;
   const osc = audio.createOscillator();
@@ -126,14 +127,16 @@ function playSynth(audio: AudioContext, midi: number, options: PluckOptions): vo
   env.connect(master as GainNode);
   osc.start(when);
   osc.stop(when + duration + 0.05);
+  return osc;
 }
 
-/** Play a real recorded string at the requested MIDI pitch. */
-export function playMidi(midi: number, options: PluckOptions = {}): void {
+/** Play a recorded string; resolve after it ends so a tuner can ignore its own reference. */
+export function playMidi(midi: number, options: PluckOptions = {}): Promise<void> {
   const audio = getAudioContext();
   const pitch = nearestSamplePitch(midi);
-  void loadSample(audio, pitch).then((buffer) => playSample(audio, buffer, pitch, midi, options))
-    .catch(() => playSynth(audio, midi, options));
+  return loadSample(audio, pitch).then((buffer) => playSample(audio, buffer, pitch, midi, options))
+    .catch(() => playSynth(audio, midi, options))
+    .then((source) => new Promise<void>((resolve) => { source.onended = () => resolve(); }));
 }
 
 /** Wait for all samples before scheduling a sequence, including its fallback notes. */
@@ -159,14 +162,14 @@ export function strum(midiNotes: (number | null)[], direction: 'down' | 'up' = '
 }
 
 /** Schedule a short metronome click against the audio clock. */
-export function playClick(accent = false, when?: number): OscillatorNode {
+export function playClick(accent: boolean | 'group' = false, when?: number): OscillatorNode {
   const audio = getAudioContext();
   const start = Math.max(audio.currentTime, when ?? audio.currentTime);
   const osc = audio.createOscillator();
   osc.type = 'sine';
-  osc.frequency.setValueAtTime(accent ? 1450 : 900, start);
+  osc.frequency.setValueAtTime(accent === true ? 1450 : accent === 'group' ? 1150 : 900, start);
   const env = audio.createGain();
-  env.gain.setValueAtTime(accent ? 0.23 : 0.14, start);
+  env.gain.setValueAtTime(accent === true ? 0.23 : accent === 'group' ? 0.18 : 0.14, start);
   env.gain.exponentialRampToValueAtTime(0.0001, start + 0.055);
   osc.connect(env);
   env.connect(master as GainNode);

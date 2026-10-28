@@ -23,14 +23,20 @@ export function normalizePc(pc: number): number {
 
 const NATURAL_PCS: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 
-/** Parse note names including theoretical double sharps/flats into a pitch class. */
-export function noteToPc(note: NoteName): number {
+/** Validate and normalize a written note without losing its enharmonic spelling. */
+export function normalizeNoteName(note: NoteName): NoteName {
   const key = note.trim().toLowerCase().replace(/\s+/g, '');
   const match = /^([a-g])(#+|b+)?$/.exec(key);
   if (!match) throw new Error(`Unknown note name: "${note}"`);
-  const accidental = match[2] ?? '';
+  return match[1].toUpperCase() + (match[2] ?? '');
+}
+
+/** Parse note names including theoretical double sharps/flats into a pitch class. */
+export function noteToPc(note: NoteName): number {
+  const key = normalizeNoteName(note).toLowerCase();
+  const accidental = key.slice(1);
   const shift = accidental.startsWith('#') ? accidental.length : -accidental.length;
-  return normalizePc(NATURAL_PCS[match[1]] + shift);
+  return normalizePc(NATURAL_PCS[key[0]] + shift);
 }
 
 /** Name a pitch class, choosing sharps or flats. */

@@ -23,6 +23,57 @@ describe('acoustic guitar sample bank', () => {
 describe('scheduled guitar sequences', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
 
+  it('resolves a reference only after the sample has loaded and finished sounding', async () => {
+    const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+    const source = { buffer: null, playbackRate: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null as (() => void) | null };
+    class FakeAudioContext {
+      currentTime = 5;
+      state = 'running';
+      destination = {};
+      createGain() { return { gain: param(), connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+      createBufferSource() { return source; }
+      decodeAudioData() { return Promise.resolve({ duration: 2 }); }
+    }
+    let release: (() => void) | undefined;
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => { release = () => resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }); })));
+    const { playMidi } = await import('./audio');
+    let finished = false;
+    const playing = playMidi(40).then(() => { finished = true; });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    release!();
+    await vi.waitFor(() => expect(source.onended).not.toBeNull());
+    expect(finished).toBe(false);
+    source.onended!();
+    await playing;
+    expect(finished).toBe(true);
+  });
+
+  it('waits for a synthesized reference to finish when its sample fails', async () => {
+    const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+    const oscillator = { type: '', frequency: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null as (() => void) | null };
+    class FakeAudioContext {
+      currentTime = 5;
+      state = 'running';
+      destination = {};
+      createGain() { return { gain: param(), connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+      createOscillator() { return oscillator; }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    const { playMidi } = await import('./audio');
+    let finished = false;
+    const playing = playMidi(40).then(() => { finished = true; });
+    await vi.waitFor(() => expect(oscillator.onended).not.toBeNull());
+    expect(finished).toBe(false);
+    oscillator.onended!();
+    await playing;
+    expect(finished).toBe(true);
+  });
+
   it('waits for slow samples and schedules a failed sample as a synth in the right order', async () => {
     const started: { kind: string; when: number }[] = [];
     const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
@@ -55,5 +106,29 @@ describe('scheduled guitar sequences', () => {
     expect(started[0].kind).toBe('sample');
     expect(started[1].kind).toBe('fallback');
     expect(started[1].when - started[0].when).toBeCloseTo(0.035);
+  });
+});
+
+describe('metronome click accents', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
+  it('uses distinct strengths for bar, group and ordinary clicks', async () => {
+    const frequencies: number[] = [];
+    const levels: number[] = [];
+    const param = (record?: number[]) => ({ value: 0, setValueAtTime: (value: number) => record?.push(value), exponentialRampToValueAtTime: vi.fn() });
+    class FakeAudioContext {
+      currentTime = 10;
+      state = 'running';
+      destination = {};
+      createGain() { return { gain: param(levels), connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+      createOscillator() { return { type: '', frequency: param(frequencies), connect: vi.fn(), start: vi.fn(), stop: vi.fn() }; }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    const { playClick } = await import('./audio');
+    playClick(true, 11);
+    playClick('group', 12);
+    playClick(false, 13);
+    expect(frequencies).toEqual([1450, 1150, 900]);
+    expect(levels).toEqual([0.23, 0.18, 0.14]);
   });
 });

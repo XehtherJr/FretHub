@@ -87,6 +87,8 @@ describe('connected triad study', () => {
     expect(compactChart.split(': ')[1].split(' ').filter((fret) => fret !== 'x')).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: 'Third · E' }));
     expect(screen.getByText(/Third in the bass: first inversion/)).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /^C\/E, fret positions/ })).toBeInTheDocument();
+    expect(screen.getByText(/Finger numbers are suggestions/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Hear this voicing' }));
     expect(strum).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /Show shape on neck/ }));
@@ -128,6 +130,60 @@ describe('connected triad study', () => {
     fireEvent.change(screen.getByLabelText('Frets shown'), { target: { value: '12' } });
     expect(screen.queryByText('A#, E-form shape')).not.toBeInTheDocument();
     expect(board.querySelectorAll('.fb-note').length).toBeGreaterThan(6);
+  });
+
+  it('guides a beginner from an open string to a root and a hidden third, then removes the guide for transfer', () => {
+    renderAt('/theory/triads/explore');
+    fireEvent.click(screen.getByRole('button', { name: 'Start the two-key challenge' }));
+    let board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of C major' });
+    expect(board.querySelectorAll('.fb-note')).toHaveLength(0);
+    expect(within(board).getByRole('button', { name: 'String 1, fret 12, play note' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Guide me: find the root first' }));
+    expect(screen.getByText(/Open string 1 sounds E/)).toBeInTheDocument();
+    expect(screen.getByText(/E–F and B–C are adjacent/)).toBeInTheDocument();
+    fireEvent.click(within(board).getByRole('button', { name: /String 1, fret 7/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('sounds B');
+    fireEvent.click(screen.getByRole('button', { name: 'Show one root' }));
+    expect(board.querySelectorAll('.fb-note')).toHaveLength(1);
+    expect(within(board).getByRole('button', { name: 'String 1, fret 12, play note' })).toBeInTheDocument();
+    const root = within(board).getByRole('button', { name: /String 1, fret 8, C, root, marker R/ });
+    expect(root.querySelector('.fb-note')).toHaveTextContent('R');
+    fireEvent.click(root);
+    expect(screen.getByRole('status')).toHaveTextContent('C is the root at fret 8');
+    fireEvent.click(within(board).getByRole('button', { name: /String 1, fret 10/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('2 frets above the root');
+    fireEvent.click(within(board).getByRole('button', { name: /String 1, fret 12/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('E is the major third');
+    fireEvent.click(screen.getByRole('button', { name: /Try another key/ }));
+    board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of F major' });
+    expect(board.querySelectorAll('.fb-note')).toHaveLength(0);
+    expect(within(board).getByRole('button', { name: 'String 2, fret 10, play note' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Guide me: find the root first' })).toBeInTheDocument();
+    fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 9/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('try another fret');
+    fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 10/ }));
+    expect(screen.getByText(/Two keys explored/)).toBeInTheDocument();
+    expect(getCompletedLessons()).toContain(TRIAD_TRANSFER_ID);
+  });
+
+  it('keeps unusual spelling, capo context and a reachable guided route', () => {
+    renderAt('/theory/triads/explore?root=Cb&quality=minor&tuning=drop-d&capo=7&frets=12');
+    expect(screen.getByLabelText('Root note')).toHaveValue('Cb');
+    expect(screen.getByText(/Ebb sounds like D on this guitar/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start the two-key challenge' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guide me: find the root first' }));
+    expect(screen.getByText(/Cb sounds the same as B here/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show one root' }));
+    const board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of Cb minor' });
+    const root = board.querySelector<HTMLButtonElement>('.fb-hit.has-marker')!;
+    expect(root).not.toBeNull();
+    const [stringIndex, rootFret] = root.dataset.position!.split(':').map(Number);
+    fireEvent.click(root);
+    const thirdFret = (rootFret === 0 ? 7 : rootFret) + 3;
+    fireEvent.click(board.querySelector<HTMLButtonElement>(`[data-position="${stringIndex}:${thirdFret}"]`)!);
+    expect(screen.getByRole('status')).toHaveTextContent('Ebb is the minor third of Cb');
+    fireEvent.click(screen.getByRole('button', { name: /Try another key/ }));
+    expect(screen.getByRole('heading', { name: 'Find the third of Fb minor' })).toBeInTheDocument();
   });
 
   it('gives actionable retry feedback and saves application separately after transfer to another key', () => {

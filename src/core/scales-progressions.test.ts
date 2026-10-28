@@ -18,6 +18,9 @@ describe('scales and modes', () => {
   it('uses interval-correct note spellings in major and minor scales', () => {
     expect(buildScale('C', 'natural-minor').map((note) => note.name)).toEqual(['C', 'D', 'Eb', 'F', 'G', 'Ab', 'Bb']);
     expect(buildScale('F#', 'major').map((note) => note.name)).toEqual(['F#', 'G#', 'A#', 'B', 'C#', 'D#', 'E#']);
+    expect(buildScale('Cb', 'major').map((note) => note.name)).toEqual(['Cb', 'Db', 'Eb', 'Fb', 'Gb', 'Ab', 'Bb']);
+    expect(buildScale('E#', 'major').map((note) => note.name)).toEqual(['E#', 'F##', 'G##', 'A#', 'B#', 'C##', 'D##']);
+    expect(buildArpeggio('Cb', ['1', '3', '5']).slice(0, 3).map((note) => note.name)).toEqual(['Cb', 'Eb', 'Gb']);
   });
 
   it('natural minor shares the major key signature (relative minor)', () => {
@@ -94,6 +97,12 @@ describe('diatonic harmony and Roman numerals', () => {
     expect(triads.map((c) => c.roman)).toEqual(['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']);
     expect(triads[4].rootName).toBe('G'); // V = G
     expect(triads[1].function).toBe('subdominant'); // ii is predominant, not tonic
+  });
+
+  it('spells diatonic chord roots using their scale degrees, including uncommon roots', () => {
+    expect(diatonicTriads('F#').map((chord) => chord.rootName)).toEqual(['F#', 'G#', 'A#', 'B', 'C#', 'D#', 'E#']);
+    expect(diatonicTriads('Cb').map((chord) => chord.rootName)).toEqual(['Cb', 'Db', 'Eb', 'Fb', 'Gb', 'Ab', 'Bb']);
+    expect(harmonicMinorTriads('C#')[6].rootName).toBe('B#');
   });
 
   it('produces seventh chords with the right qualities', () => {
