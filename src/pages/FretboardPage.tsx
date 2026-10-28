@@ -3,17 +3,21 @@ import { Link, useSearchParams } from 'react-router-dom';
 import Fretboard, { FretMarkerData, markerKey } from '@/components/Fretboard';
 import ProgressionBuilder from '@/components/ProgressionBuilder';
 import Icon from '@/components/Icon';
-import { TUNINGS, getTuning, applyCapo } from '@core/tunings';
-import { fretPc, generateVoicings } from '@core/voicing-engine';
+import { TUNINGS, getTuning } from '@core/tunings';
+import { fretPc } from '@core/voicing-engine';
+import { searchChordReference } from '@core/referenceVoicing';
 import { pcToNote, ROOT_NOTES, noteToPc, fretToMidi } from '@core/notes';
 import { identifyChord, describeMatch } from '@core/chord-identifier';
-import { buildChord, chordVoicingConstraints } from '@core/chords';
+import { buildChord } from '@core/chords';
+import { getChordType } from '@core/chord-definitions';
 import { buildScale, buildArpeggio, scaleTriadIntervals, SCALE_TYPES } from '@core/scales';
 import { playMidi, playSequence, strum, isAudioSupported } from '@core/audio';
 import { chordPath, instrumentFromSearch, scalePath, triadStudyPath } from '@/lib/urls';
 import { qualityForTriadIntervals } from '@core/triadRelationships';
 
 interface SelectedNote { fret: number; pc: number; }
+
+const ARPEGGIO_GAPS = { slow: 0.6, medium: 0.35, fast: 0.16 } as const;
 
 /** Prefer to explain awkward double-accidental spellings with an enharmonic alternative. */
 function spellingCost(names: string[]): number {
@@ -33,6 +37,7 @@ export default function FretboardPage() {
   const [progressionActionSlot, setProgressionActionSlot] = useState<HTMLSpanElement | null>(null);
   const [progressionPickerSlot, setProgressionPickerSlot] = useState<HTMLDivElement | null>(null);
   const [soundOnClick, setSoundOnClick] = useState(true);
+  const [arpeggioSpeed, setArpeggioSpeed] = useState<keyof typeof ARPEGGIO_GAPS>('medium');
   const [showOptions, setShowOptions] = useState(false);
   const [selected, setSelected] = useState<Map<number, SelectedNote>>(new Map());
   const [loadMessage, setLoadMessage] = useState<string | null>(null);
@@ -71,21 +76,7 @@ export default function FretboardPage() {
       const chord = buildChord(root, typeId);
       const bassParam = searchParams.get('bass');
       const requestedBass = bassParam ? noteToPc(bassParam) : undefined;
-      const capoTuning = applyCapo(requestedTuning, instrument.capo);
-      const constraints = chordVoicingConstraints(chord);
-      const tones = requestedBass !== undefined && !chord.pitchClasses.includes(requestedBass)
-        ? [...chord.pitchClasses, requestedBass] : chord.pitchClasses;
-      const options = {
-        ...constraints,
-        requiredBass: requestedBass,
-        maxFret: Math.min(14, 24 - instrument.capo),
-        maxMuted: constraints.requiredVoicing ? Math.max(2, requestedTuning.strings.length - constraints.requiredVoicing.length) : 2,
-        maxResults: 1,
-      };
-      // Prefer a complete diagram, but allow declared omissions when there
-      // are more chord tones than the guitar can conveniently play.
-      const complete = generateVoicings(tones, capoTuning, chord.rootPc, { ...options, allowedOmissions: [] });
-      const [voicing] = complete.length ? complete : generateVoicings(tones, capoTuning, chord.rootPc, options);
+      const { voicing, searchTruncated } = searchChordReference(chord, requestedTuning, instrument.capo, { requiredBass: requestedBass });
       if (voicing) {
         const next = new Map<number, SelectedNote>();
         let highestFret = 0;
@@ -98,8 +89,9 @@ export default function FretboardPage() {
         setFretCount((current) => [12, 15, 22, 24].find((count) => count >= Math.max(current, highestFret)) ?? 24);
         setSelected(next);
         setMode(searchParams.get('mode') === 'progression' ? 'progression' : 'build');
+        if (searchTruncated) setLoadMessage('The reference search reached its safety limit; other shapes may exist.');
       } else {
-        setLoadMessage('No playable reference voicing was found for this chord, bass, tuning and capo. Try changing the instrument settings or select notes yourself.');
+        setLoadMessage(`${searchTruncated ? 'The search reached its safety limit. ' : ''}No reference voicing was found within the current model and settings. Try changing the instrument settings or select notes yourself.`);
       }
     } catch {
       setLoadMessage('This chord link could not be understood. Try selecting notes yourself or opening a chord from the library.');
@@ -182,7 +174,7 @@ export default function FretboardPage() {
     if (audioAvailable) strum(selectedMidi());
   };
   const arpeggiateSelection = () => {
-    if (audioAvailable) playSequence(selectedMidi().filter((midi): midi is number => midi !== null), 0.35, 1.4);
+    if (audioAvailable) playSequence(selectedMidi().filter((midi): midi is number => midi !== null), ARPEGGIO_GAPS[arpeggioSpeed], 1.4);
   };
   const clearBoard = () => { setSelected(new Map()); setLoadMessage(null); };
   const changeFretCount = (count: number) => {
@@ -316,6 +308,7 @@ export default function FretboardPage() {
             preferFlats={preferFlats}
             ariaLabel={mode === 'scale' ? `Fretboard showing ${displayScaleRoot} ${scaleType.name}` : mode === 'progression' ? 'Interactive guitar fretboard — select notes for your progression' : 'Interactive guitar fretboard — select notes to identify chords'}
           />
+          {mode !== 'scale' && loadMessage && <p className="wb-empty-copy wb-load-message" role="status">{loadMessage}</p>}
           <div className="wb-neck-footer">
             <p>{mode !== 'scale' ? 'Select one note per string. Select it again to remove it. Arpeggiate plays selected strings one by one.' : 'Select any position to inspect or hear its note.'} <span>Use arrow keys to move; scroll to see higher frets.</span></p>
             {mode !== 'scale' && <div className="wb-board-actions">
@@ -323,6 +316,11 @@ export default function FretboardPage() {
               <button type="button" className="btn btn-primary btn-sm" onClick={playSelection} disabled={selected.size === 0 || !audioAvailable}><Icon name="play" /> Strum selection</button>
               <button type="button" className="btn btn-sm" onClick={arpeggiateSelection} disabled={selected.size === 0 || !audioAvailable} title={`Play selected strings one at a time, from string ${tuning.strings.length} toward string 1`}><Icon name="play" /> Arpeggiate selection</button>
               {mode === 'progression' && <span ref={setProgressionActionSlot} className="wb-progression-actions" />}
+              <label className="wb-arpeggio-speed" htmlFor="arpeggio-speed">Speed
+                <select id="arpeggio-speed" aria-label="Arpeggio speed" value={arpeggioSpeed} onChange={(event) => setArpeggioSpeed(event.target.value as keyof typeof ARPEGGIO_GAPS)}>
+                  <option value="slow">Slow</option><option value="medium">Medium</option><option value="fast">Fast</option>
+                </select>
+              </label>
             </div>}
             {mode === 'progression' && <div className="wb-progression-picker-slot" ref={setProgressionPickerSlot} />}
           </div>
@@ -342,7 +340,6 @@ export default function FretboardPage() {
         <div className="wb-results">
           <section className="wb-selection" aria-live="polite">
             <div className="wb-result-heading"><div><p className="wb-section-kicker">YOUR VOICING</p><h2>Selection</h2></div><span>{selected.size} / {tuning.strings.length} strings</span></div>
-            {loadMessage && <p className="wb-empty-copy">{loadMessage}</p>}
             {selected.size === 0 && !loadMessage && <p className="wb-empty-copy">Your selected notes will appear here.</p>}
             {selected.size > 0 && (
               <div className="wb-selected-list">
@@ -384,23 +381,26 @@ export default function FretboardPage() {
                     const alternateRoot = pcToNote(chord.rootPc, !preferFlats);
                     const alternate = alternateRoot !== rootName ? buildChord(alternateRoot, chord.typeId, pcToNote(chord.bassPc, !preferFlats)) : null;
                     const showAlternate = alternate && spellingCost(chord.tones.map((tone) => tone.name)) >= spellingCost(alternate.tones.map((tone) => tone.name)) + 2;
-                    const omitted = chord.tones.filter((tone) => match.missingPcs.includes(tone.pc) && (!match.rootAssumed || tone.pc !== chord.rootPc));
+                    const alternatives = getChordType(chord.typeId).requireOneOf ?? [];
+                    const omitted = chord.tones.filter((tone) => match.missingPcs.includes(tone.pc) && !alternatives.includes(tone.interval) && (!match.rootAssumed || tone.pc !== chord.rootPc));
+                    const playedAlternatives = chord.tones.filter((tone) => alternatives.includes(tone.interval) && !match.missingPcs.includes(tone.pc));
                     const bassName = chord.bassName;
                     return (
                       <Link className="wb-match" key={`${match.chord.rootPc}-${match.chord.typeId}`} to={chordPath(chord.rootName, chord.typeId, bassName, { tuning: tuningId, capo })} title={describeMatch({ ...match, chord }, preferFlats)}>
                         <strong>{chord.shortName}</strong>
-                        <span className="wb-match-detail">{chord.typeName}<small>Chord tones: {chord.tones.map((tone) => tone.name).join(' · ')}</small>
+                        <span className="wb-match-detail">{chord.typeName}<small>{alternatives.length ? 'Possible chord tones' : 'Chord tones'}: {chord.tones.map((tone) => tone.name).join(' · ')}</small>
+                          {playedAlternatives.length > 0 && <small>Played alterations: {playedAlternatives.map((tone) => `${tone.name} (${tone.interval})`).join(', ')}</small>}
                           {showAlternate && <small>Also spelled {alternate!.shortName}</small>}
                           {match.rootAssumed && <small>Root {chord.rootName} assumed, not played</small>}
                           {omitted.length > 0 && <small>Not played: {omitted.map((tone) => `${tone.name} (${tone.interval})`).join(', ')}</small>}
                           {match.strength === 'slash' && <small>{chord.bassName} is a non-chord bass</small>}
                         </span>
-                        <span className="wb-match-strength">{match.strength === 'exact' ? 'Exact' : match.strength === 'partial' ? 'Partial' : 'Slash bass'}</span><Icon name="arrow" />
+                        <span className="wb-match-strength">{match.strength === 'exact' ? 'Exact' : match.strength === 'family' ? 'Family match' : match.strength === 'partial' ? 'Partial' : 'Slash bass'}</span><Icon name="arrow" />
                       </Link>
                     );
                   })}
                   {matches.length > 8 && <button type="button" className="btn btn-sm wb-show-matches" aria-expanded={showAllMatches} aria-controls="identified-chords" onClick={() => setExpandedMatchKey(showAllMatches ? null : matchKey)}>{showAllMatches ? 'Show fewer matches' : `Show all ${matches.length} matches`}</button>}
-                  <p className="wb-match-note">Exact matches use the same pitch classes; partial matches name missing tones. Slash bass means the bass is outside the chord. Results use the lowest sounding note, but context determines the intended name. Links retain bass, tuning and capo but open a reference whose voicings may differ from this selection. A D# on the neck may be spelled Eb in a C minor chord.</p>
+                  <p className="wb-match-note">Exact matches use the same pitch classes; partial matches name missing tones. A family match uses at least one of several alternative alterations without requiring all of them. Slash bass means the bass is outside the chord. Results use the lowest sounding note, but context determines the intended name. Links retain bass, tuning and capo but open a reference whose voicings may differ from this selection. A D# on the neck may be spelled Eb in a C minor chord.</p>
                 </div>
               )}
             </div>

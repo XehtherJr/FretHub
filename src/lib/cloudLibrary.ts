@@ -24,13 +24,13 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
       .select('data, revision').eq('user_id', userId).maybeSingle();
     if (readError) throw readError;
     if (!isCurrent()) return { dirty: false };
-    if (row && (!row.data || typeof row.data !== 'object' || ![1, 2].includes(row.data.version))) {
+    if (row && (!row.data || typeof row.data !== 'object' || ![1, 2, 3].includes(row.data.version))) {
       throw new Error('This library was saved in an unsupported format. It was not changed.');
     }
     const remote = row ? normalizeSnapshot(row.data) : emptySnapshot();
-    // Never replace a v2 cloud row after silently discarding an unfamiliar or
-    // damaged progression. A newer app or a repair may still recover it.
-    if (row?.data.version === 2) {
+    // Never replace a cloud row after silently discarding an unfamiliar or
+    // damaged progression or pattern. A newer app or a repair may recover it.
+    if (row && (row.data.version === 2 || row.data.version === 3)) {
       const progressions: unknown = row.data.progressions;
       if (!progressions || typeof progressions !== 'object' || Array.isArray(progressions)
         || Object.keys(progressions).length !== Object.keys(remote.progressions).length) {
@@ -38,7 +38,7 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
       }
     }
     const merged = mergeLibrarySnapshots(remote, getLibrarySnapshot());
-    if (!row || row.data.version !== 2 || canonical(merged) !== canonical(remote)) {
+    if (!row || row.data.version !== 3 || canonical(merged) !== canonical(remote)) {
       if (!isCurrent()) return { dirty: false };
       if (!row) {
         const { error } = await client.from('user_libraries').insert({ user_id: userId, data: merged, revision: 1 });

@@ -27,7 +27,7 @@ function StringLab() {
 function DiagramLab() {
   const tuning = getTuning('standard');
   const chord = buildChord('C', 'major');
-  const voicing = useMemo(() => generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 })[0], [tuning, chord.rootPc, chord.pitchClasses.join(',')]);
+  const voicing = useMemo(() => generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { requiredBass: chord.rootPc, maxResults: 1 })[0], [tuning, chord.rootPc, chord.pitchClasses.join(',')]);
   return <LabFrame kicker="DIAGRAM EXPLORER" title="A C major shape">
     <div className="lesson-diagram-lab">{voicing && <ChordDiagram voicing={voicing} tuning={tuning} name="C" rootPc={chord.rootPc} showNotes={false} />}<div><p>The grid is the guitar neck. Read the strings from thick to thin, left to right. Follow the dots; O means open and × means skip.</p>{voicing && <button type="button" className="btn btn-primary btn-sm" onClick={() => strum(voicing.midi)}>Hear the shape</button>} <Link className="text-link" to={chordPath('C', 'major')}>Explore C major →</Link></div></div>
   </LabFrame>;

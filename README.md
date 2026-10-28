@@ -43,14 +43,23 @@ Open **Build a progression** on the fretboard. Select notes directly, or type a 
 beside the arpeggiate button and repeat in any order. A recognized chord name must be shown first,
 unless you explicitly use it as a label for your current frets. You can edit the selected shape,
 reorder or remove chords, choose how many quarter-note beats each lasts, change tempo, and loop
-playback. **Save progression** opens a dialog for the name and difficulty. Playback makes one sampled
-downstroke per chord, not a complete strumming pattern.
+playback. **Save progression** opens a dialog for the name and difficulty. The workbench displays the
+bass-side string at the top; the selection arpeggio has slow, medium and fast speeds.
 
-A saved progression retains the exact frets and muted/open strings, tuning and capo, not just chord
+Under **Picking & strumming**, choose one downstrum per chord (the default for older saves), a
+low-to-high arpeggio, or a custom pattern. Pick the number of equal steps per quarter-note beat.
+The same pattern repeats for each chord and restarts at the next chord; a picked string that is
+muted in that chord is silent. Enter string numbers or open tuning names, with spaces or dashes
+between steps: `A-D-G-B-G-G+E4` (or `5 4 3 2 3 3+1` in standard tuning) ends by picking G and high E
+at the same time. Use `down`, `up` and `rest` for strums and rests. String names refer to the tuning
+before the capo; include the octave or use a number when a name is ambiguous. **Build steps with
+buttons** offers the same controls without typing. Patterns are limited to 64 steps.
+
+A saved progression retains its pattern, exact frets and muted/open strings, tuning and capo, not just chord
 names. Load it from the builder or Library; loading restores its instrument setup. Every progression
 has a beginner, novice, intermediate or advanced label. Automatic labels are **rough estimates**
 based on span, likely fingering, position changes, chord duration and tempo; they do not judge
-musical difficulty. Choose a label manually if it fits better. Suggested voicings and automatic
+musical difficulty or picking-pattern coordination. Choose a label manually if it fits better. Suggested voicings and automatic
 grades are heuristics and do not guarantee that a shape is comfortable for every player.
 
 ### Optional cross-device library sync
@@ -63,7 +72,7 @@ remains guest-only. No service-role key or other secret belongs in a browser bui
    confirmation** for this immediate-signup flow. Run [`supabase/schema.sql`](supabase/schema.sql)
    in the SQL editor; the library table's RLS permits authenticated users to read, insert and update
    only their own row. The idempotent schema also installs the optional email-verification functions
-   and updates the default to snapshot version 2 without replacing existing rows.
+   and updates the default to snapshot version 3 without replacing existing rows.
 2. Copy `.env.example` to `.env.local` for local development. Set `VITE_SUPABASE_URL` and
    `VITE_SUPABASE_ANON_KEY` to the project's **public project URL and publishable (or legacy anon)
    key**. Restart the dev server. Keep `.env.local` out of Git and never use a secret/service-role key.
@@ -101,8 +110,9 @@ sync after edits, on focus/reconnection, or with **Sync now**. If the same item 
 devices, the latest item timestamp wins, so device clocks should be reasonably accurate. Recent
 chords and practice quiz totals stay on the device rather than syncing. Clearing site data removes
 local copies, including changes that have not synced; do so on shared devices after signing out if
-privacy matters. Sync is not a backup. Older app versions cannot safely read version-2 progression
-snapshots and must be updated rather than allowed to overwrite them.
+privacy matters. Sync is not a backup. Version-1 and version-2 snapshots are upgraded without
+changing existing progression playback. Older app versions cannot safely read version-3 snapshots
+with picking patterns and must be updated rather than allowed to overwrite them.
 
 #### Configure production email
 
@@ -145,13 +155,16 @@ public/audio/onset-detector.js # local-only AudioWorklet transient detector
 supabase/schema.sql          # optional account tables, policies and email-proof functions
 ```
 
-The voicing engine searches string/fret combinations, prunes unplayable spans, supports open and
-muted strings, assigns up to four fingers, detects barres and ranks practical results. Both the
-voicing engine and chord identifier use the lowest *sounding pitch*, not just the first played
-string, for inversions (including in re-entrant tunings). Fingering and playability are conservative
-heuristics, not a guarantee; some valid shapes may be omitted. Chord and scale tone names follow
-interval spelling (for example C minor uses E♭); fretboard pitch labels can be switched between
-sharps and flats.
+The voicing engine searches string/fret combinations within a chosen span, supports open and muted
+strings, and suggests up to four fingers and two barres. Both the voicing engine and chord identifier
+use the lowest *sounding pitch*, not just the first played string, for inversions (including in
+re-entrant tunings). Fingering and difficulty are conservative, uncalibrated heuristics, not a
+guarantee; the model does not use a fretting thumb, and some valid shapes may be omitted. Chord
+details sort by position or estimated ease, expose position and mute filters, and page through all
+found results. The safety limit is reported if it stops the search; narrow the filters to explore
+further. See [voicing heuristics and evidence](docs/voicing-heuristics.md) for the exact rules,
+limitations and independent reference comparison. Chord and scale tone names follow interval spelling
+(for example C minor uses E♭); fretboard pitch labels can be switched between sharps and flats.
 
 The shareable `/theory/triads/explore` route accepts root, quality, scale and instrument settings.
 Its optional E/A CAGED examples apply only to major chords in standard six-string tuning; they are
@@ -185,8 +198,8 @@ Configure an SPA fallback to `index.html`; `public/_redirects` provides it for N
 specified for compatible builds. A Supabase project is only needed for the optional account feature.
 
 - The chord vocabulary is extensive but not exhaustive. The fretboard finder reports exact
-  pitch-class matches, labels omitted tones in partial matches, and distinguishes a non-chord slash
-  bass from an inversion. It considers an unplayed root only when the player chooses the optional
+  pitch-class matches, labels omitted tones in partial matches, treats choices such as 7alt as a
+  family rather than requiring every alteration, and distinguishes a non-chord slash bass from an inversion. It considers an unplayed root only when the player chooses the optional
   root hint, including for two-note third-and-seventh shells. Rootless voicings and shared note
   sets are interpretations, not proof of harmonic function. The specific So What voicing requires
   its actual ascending registers (e.g. D–G–C–F–A),

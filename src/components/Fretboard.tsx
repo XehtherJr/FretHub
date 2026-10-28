@@ -69,7 +69,7 @@ export default function Fretboard({
 }: FretboardProps) {
   const id = useId().replace(/:/g, '');
   const boardRef = useRef<HTMLDivElement>(null);
-  const [focusKey, setFocusKey] = useState(() => markerKey(tuning.strings.length - 1, 0));
+  const [focusKey, setFocusKey] = useState(() => markerKey(0, 0));
   const markerMap = new Map<string, FretMarkerData>();
   const soundingFret = (fret: number) => fret === 0 ? capo : fret;
 
@@ -87,7 +87,9 @@ export default function Fretboard({
   }
 
   const stringCount = tuning.strings.length;
-  const visualIndices = tuning.strings.map((_, i) => i).reverse();
+  // The bass-side string is the top row; indices remain in physical string
+  // order throughout the music engine, saved shapes and string numbering.
+  const visualIndices = tuning.strings.map((_, i) => i);
   const frets = Array.from({ length: fretCount }, (_, i) => i + 1);
   const endX = fretWireX(fretCount) + 5;
   const width = endX + 5;
@@ -102,7 +104,7 @@ export default function Fretboard({
     return FIRST_STRING_Y + visualIndex * STRING_GAP + taper * 8 * across;
   };
   const isPlayable = (fret: number) => fret === 0 || fret > capo;
-  const fallbackKey = markerKey(stringCount - 1, 0);
+  const fallbackKey = markerKey(0, 0);
   const [focusedString, focusedFret] = focusKey.split(':').map(Number);
   const effectiveFocusKey = focusedString >= 0 && focusedString < stringCount && focusedFret <= fretCount && isPlayable(focusedFret)
     ? focusKey : fallbackKey;
@@ -111,8 +113,8 @@ export default function Fretboard({
     let nextString = stringIndex;
     let nextFret = fret;
     switch (event.key) {
-      case 'ArrowUp': nextString = Math.min(stringCount - 1, stringIndex + 1); break;
-      case 'ArrowDown': nextString = Math.max(0, stringIndex - 1); break;
+      case 'ArrowUp': nextString = Math.max(0, stringIndex - 1); break;
+      case 'ArrowDown': nextString = Math.min(stringCount - 1, stringIndex + 1); break;
       case 'ArrowRight': nextFret = fret === 0 ? Math.min(fretCount, capo + 1) : Math.min(fretCount, fret + 1); break;
       case 'ArrowLeft': nextFret = fret <= capo + 1 ? 0 : fret - 1; break;
       case 'Home': nextFret = 0; break;
@@ -254,7 +256,7 @@ export default function Fretboard({
                 <line x1={OPEN_LEFT} y1={y1 + 1.3} x2={endX} y2={y2 + 1.3} stroke="#0e0b0a" strokeWidth={thickness + 1.5} opacity="0.65" />
                 <line x1={OPEN_LEFT} y1={y1} x2={endX} y2={y2} stroke={wound ? '#b6a99a' : '#ded6c7'} strokeWidth={thickness} />
                 {wound && <line x1={OPEN_LEFT} y1={y1 - 0.35} x2={endX} y2={y2 - 0.35} stroke="#f0e7d7" strokeWidth="0.55" strokeDasharray="2 2.4" opacity="0.6" />}
-                <text x="10" y={y1 + 4} className="fb-svg-string-label">{pcToNote(tuning.strings[stringIndex].pc, preferFlats)}</text>
+                <text x="6" y={y1 + 4} className="fb-svg-string-label">{pcToNote(tuning.strings[stringIndex].pc, preferFlats)}{tuning.strings[stringIndex].octave}</text>
               </g>
             );
           })}

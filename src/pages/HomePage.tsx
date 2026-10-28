@@ -22,7 +22,7 @@ const DESTINATIONS = [
 export default function HomePage() {
   const standard = getTuning('standard');
   const featured = buildChord('G', 'major-7');
-  const featuredVoicing = generateVoicings(featured.pitchClasses, standard, featured.rootPc, { maxResults: 1 })[0];
+  const featuredVoicing = generateVoicings(featured.pitchClasses, standard, featured.rootPc, { requiredBass: featured.rootPc, maxResults: 1 })[0];
 
   return (
     <div className="page home-page">
@@ -60,7 +60,7 @@ export default function HomePage() {
         <div className="home-popular">
           {POPULAR.map(([root, typeId]) => {
             const chord = buildChord(root, typeId);
-            const voicing = generateVoicings(chord.pitchClasses, standard, chord.rootPc, { maxResults: 1 })[0];
+            const voicing = generateVoicings(chord.pitchClasses, standard, chord.rootPc, { requiredBass: chord.rootPc, maxResults: 1 })[0];
             return <Link key={`${root}-${typeId}`} to={chordPath(root, typeId)} className="home-chord">{voicing && <ChordDiagram voicing={voicing} tuning={standard} name={chord.shortName} rootPc={chord.rootPc} compact showNotes={false} />}<span>{chord.tones.map((tone) => tone.name).join(' · ')}</span></Link>;
           })}
         </div>

@@ -161,7 +161,8 @@ export function strum(midiNotes: (number | null)[], direction: 'down' | 'up' = '
   playSequence(direction === 'down' ? notes : [...notes].reverse(), gap, 2.8, 0.85);
 }
 
-export type PreparedStrummer = (notes: (number | null)[], when: number, duration: number) => AudioScheduledSourceNode[];
+export interface StrumOptions { direction?: 'down' | 'up'; gap?: number }
+export type PreparedStrummer = (notes: (number | null)[], when: number, duration: number, options?: StrumOptions) => AudioScheduledSourceNode[];
 
 /** Decode each needed recording once before scheduling a cancellable progression. */
 export async function prepareStrummer(audio: AudioContext, midiNotes: number[]): Promise<PreparedStrummer> {
@@ -171,12 +172,15 @@ export async function prepareStrummer(audio: AudioContext, midiNotes: number[]):
     return [midi, { pitch, buffer }] as const;
   }));
   const prepared = new Map(entries);
-  return (notes, when, duration) => {
+  return (notes, when, duration, strumOptions = {}) => {
     const sources: AudioScheduledSourceNode[] = [];
     try {
-      notes.filter((midi): midi is number => midi !== null).forEach((midi, index) => {
+      const sounding = notes.filter((midi): midi is number => midi !== null);
+      const ordered = strumOptions.direction === 'up' ? sounding.reverse() : sounding;
+      const gap = strumOptions.gap ?? 0.035;
+      ordered.forEach((midi, index) => {
         const sample = prepared.get(midi);
-        const options = { when: when + index * 0.035, duration, velocity: 0.85 };
+        const options = { when: when + index * gap, duration, velocity: 0.85 };
         sources.push(sample?.buffer ? playSample(audio, sample.buffer, sample.pitch, midi, options) : playSynth(audio, midi, options));
       });
     } catch (error) {

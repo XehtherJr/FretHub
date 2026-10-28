@@ -93,5 +93,4 @@
 .cd-dot circle, .cd-barre rect { fill: #e5ded2; }
 .cd-dot.root circle { fill: #d9ad67; }
 .cd-dot text, .cd-barre text { fill: #211d19; font-family: var(--font-body); font-size: 10px; font-weight: 750; }
-.cd-barre text { fill: #d4cbbc; }
 .cd-name { color: var(--cream); font-size: 1rem; font-weight: 650; margin-top: 0.35rem; line-height: 1.2; }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import SaveProgressionDialog, { type GradeChoice } from './SaveProgressionDialog';
+import ProgressionPatternEditor, { type PatternMode } from './ProgressionPatternEditor';
 import { CHORD_TYPES } from '@core/chord-definitions';
 import { parseChordInput } from '@core/chordInput';
 import type { ChordMatch } from '@core/chord-identifier';
@@ -10,8 +11,9 @@ import { noteToPc, pcToNote, ROOT_NOTES } from '@core/notes';
 import { getTuning } from '@core/tunings';
 import { isAudioSupported } from '@core/audio';
 import { startProgressionPlayback, type ProgressionPlayback } from '@core/progressionAudio';
+import { formatPickingPattern, parsePickingPattern, type PlaybackPattern, type StepsPerBeat } from '@core/pickingPattern';
 import {
-  estimateProgressionDifficulty, progressionId, progressionMidi, referenceShape,
+  estimateProgressionDifficulty, progressionId, progressionMidi, searchReferenceShape,
   type ProgressionStep, type SavedProgression,
 } from '@core/userProgressions';
 import { deleteProgression, getProgressions, LIBRARY_CHANGE_EVENT, saveProgression } from '@core/storage';
@@ -38,6 +40,9 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   const [title, setTitle] = useState('My progression');
   const [tempoText, setTempoText] = useState('90');
   const [loop, setLoop] = useState(false);
+  const [patternMode, setPatternMode] = useState<PatternMode>('single');
+  const [stepsPerBeat, setStepsPerBeat] = useState<StepsPerBeat>(2);
+  const [patternText, setPatternText] = useState('5 4 3 2 3 3+1');
   const [gradeChoice, setGradeChoice] = useState<GradeChoice>('auto');
   const [label, setLabel] = useState('');
   const [labelCurrentShape, setLabelCurrentShape] = useState(false);
@@ -60,8 +65,13 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   const sync = useLibrarySync();
   const bpm = Number(tempoText);
   const validTempo = tempoText.trim() !== '' && Number.isInteger(bpm) && bpm >= 40 && bpm <= 240;
-  const estimate = useMemo(() => estimateProgressionDifficulty(chords, instrument?.capo ?? capo, validTempo ? bpm : 90), [chords, instrument, capo, bpm, validTempo]);
+  const estimate = useMemo(() => estimateProgressionDifficulty(chords, instrument?.capo ?? capo, validTempo ? bpm : 90, loop), [chords, instrument, capo, bpm, validTempo, loop]);
   const compatible = !instrument || (instrument.tuningId === tuningId && instrument.capo === capo);
+  const patternTuning = getTuning(instrument?.tuningId ?? tuningId);
+  const parsedPattern = useMemo(() => parsePickingPattern(patternText, patternTuning), [patternText, patternTuning]);
+  const validPattern = patternMode !== 'custom' || parsedPattern.steps !== null;
+  const playbackPattern: PlaybackPattern | undefined = patternMode === 'arpeggio' ? { mode: 'arpeggio', stepsPerBeat }
+    : patternMode === 'custom' && parsedPattern.steps ? { mode: 'custom', stepsPerBeat, steps: parsedPattern.steps } : undefined;
   const selectedMidi = progressionMidi(selectedFrets, tuningId, capo);
   const distinctNotes = new Set(selectedMidi.filter((midi): midi is number => midi !== null).map((midi) => ((midi % 12) + 12) % 12));
   const match = matches[0];
@@ -99,6 +109,9 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     setTitle(item.name);
     setTempoText(String(item.bpm));
     setLoop(item.loop);
+    setPatternMode(item.pattern?.mode ?? 'single');
+    setStepsPerBeat(item.pattern?.stepsPerBeat ?? 2);
+    setPatternText(item.pattern?.mode === 'custom' ? formatPickingPattern(item.pattern.steps, getTuning(item.tuningId).strings.length) : '5 4 3 2 3 3+1');
     setGradeChoice(item.difficultyMode === 'auto' ? 'auto' : item.difficulty);
     setSavedId(item.id);
     setEditingId(null);
@@ -123,7 +136,8 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   const newProgression = () => {
     if (!discardChanges()) return;
     stop(); setChords([]); setInstrument(null); setTitle('My progression'); setTempoText('90');
-    setLoop(false); setGradeChoice('auto'); setLabel(''); setLabelCurrentShape(false); setReference(null); setEditingId(null); setSavedId(null); setDirty(false);
+    setLoop(false); setPatternMode('single'); setStepsPerBeat(2); setPatternText('5 4 3 2 3 3+1');
+    setGradeChoice('auto'); setLabel(''); setLabelCurrentShape(false); setReference(null); setEditingId(null); setSavedId(null); setDirty(false);
     notify('New progression. Select a chord on the neck, or choose one below.');
   };
   const chooseChord = (nextRoot: string, nextType: string) => {
@@ -140,12 +154,12 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     const parsed = parseChordInput(label.trim() || suggestion || 'C');
     if (!parsed) { notify('Chord not recognized. Try a name such as C, Am7 or F#7, choose a root and type, or add a shape with your own name.', 'neck'); return; }
     try {
-      const shape = referenceShape(parsed.root, parsed.typeId, tuningId, capo, parsed.bass);
-      if (!shape) { notify('No playable starting shape was found for this chord, bass, tuning and capo. Try another chord or select the notes yourself.', 'neck'); return; }
+      const { shape, searchTruncated } = searchReferenceShape(parsed.root, parsed.typeId, tuningId, capo, parsed.bass);
+      if (!shape) { notify(`${searchTruncated ? 'The search reached its safety limit. ' : ''}No starting shape was found within the current model and settings. Try another chord or select the notes yourself.`, 'neck'); return; }
       onLoadShape(shape.frets, tuningId, capo);
       setReference({ ...shape, tuningId, capo });
       setLabel(''); setLabelCurrentShape(false);
-      notify(`${shape.name} is on the neck. Adjust it if you like, then add it to the progression.`, 'neck');
+      notify(`${shape.name} is on the neck. ${searchTruncated ? 'The search reached its safety limit; other shapes may exist. ' : ''}Adjust it if you like, then add it to the progression.`, 'neck');
     } catch { notify('Could not load that chord. Try selecting its notes on the neck.', 'neck'); }
   };
   const addOrUpdate = () => {
@@ -182,12 +196,14 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   };
   const save = (rawName: string, grade: GradeChoice): string | null => {
     if (!instrument || !chords.length || !validTempo || editingIndex >= 0) return 'Update or cancel the chord edit before saving.';
+    if (!validPattern) return 'Fix the picking pattern before saving.';
     const name = rawName.trim();
     if (!name || name.length > 100) return 'Give the progression a name of up to 100 characters.';
     const item: SavedProgression = {
       id: savedId ?? progressionId(), name, ...instrument, bpm, loop,
       difficulty: grade === 'auto' ? estimate.level : grade,
       difficultyMode: grade === 'auto' ? 'auto' : 'manual', chords,
+      ...(playbackPattern ? { pattern: playbackPattern } : {}),
     };
     if (!saveProgression(item)) return 'Could not save this progression on this device. Check browser storage and try again.';
     setSavedId(item.id); setTitle(name); setGradeChoice(grade); setDirty(false);
@@ -195,14 +211,18 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     return null;
   };
   const play = () => {
-    if (!instrument || !chords.length || !validTempo || !isAudioSupported()) return;
+    if (!instrument || !chords.length || !validTempo || !validPattern || !isAudioSupported()) return;
     stop();
     try {
-      player.current = startProgressionPlayback(chords.map((item) => ({ midi: progressionMidi(item.frets, instrument.tuningId, instrument.capo), beats: item.beats })), bpm, loop, {
-        onChord: (index) => { setCurrentChord(index); notify('Playing progression.'); },
+      const playbackChords = chords.map((item) => ({ midi: progressionMidi(item.frets, instrument.tuningId, instrument.capo), beats: item.beats }));
+      const callbacks = {
+        onChord: (index: number) => { setCurrentChord(index); notify('Playing progression.'); },
         onEnd: () => { player.current = null; setPlaying(false); setCurrentChord(null); notify('Playback finished.'); },
         onError: () => { player.current = null; setPlaying(false); setCurrentChord(null); notify('Audio could not be started. Please try again.'); },
-      });
+      };
+      player.current = playbackPattern
+        ? startProgressionPlayback(playbackChords, bpm, loop, callbacks, playbackPattern)
+        : startProgressionPlayback(playbackChords, bpm, loop, callbacks);
       setPlaying(true); notify('Preparing guitar sounds…');
     } catch { notify('Audio could not be started in this browser.'); }
   };
@@ -249,15 +269,22 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
         )}
       </div>
 
+      <ProgressionPatternEditor
+        tuning={patternTuning} mode={patternMode} stepsPerBeat={stepsPerBeat} text={patternText}
+        error={patternMode === 'custom' ? parsedPattern.error : null}
+        onModeChange={(mode) => { stop(); setPatternMode(mode); setDirty(true); }}
+        onTimingChange={(value) => { stop(); setStepsPerBeat(value); setDirty(true); }}
+        onTextChange={(value) => { stop(); setPatternText(value); setDirty(true); }}
+      />
       <div className="progression-settings">
         <div className="field"><label htmlFor="progression-tempo">Tempo (BPM)</label><input id="progression-tempo" type="number" min={40} max={240} step={1} value={tempoText} onChange={(event) => { stop(); setTempoText(event.target.value); setDirty(true); }} aria-describedby="progression-tempo-help" /><small id="progression-tempo-help">40–240 quarter-note beats per minute</small></div>
         <label className="progression-loop"><input type="checkbox" checked={loop} onChange={(event) => { stop(); setLoop(event.target.checked); setDirty(true); }} /> Loop progression</label>
         <div className="progression-play-actions">
-          <button type="button" className="btn btn-primary" disabled={!chords.length || !validTempo || !isAudioSupported() || playing || editingIndex >= 0} onClick={play}>Play progression</button>
+          <button type="button" className="btn btn-primary" disabled={!chords.length || !validTempo || !validPattern || !isAudioSupported() || playing || editingIndex >= 0} onClick={play}>Play progression</button>
           <button type="button" className="btn" disabled={!playing} onClick={() => { stop(); notify('Playback stopped.'); }}>Stop</button>
         </div>
       </div>
-      <div className="progression-save-row"><button type="button" className="btn btn-primary" disabled={!chords.length || !validTempo || editingIndex >= 0} onClick={() => setSaveOpen(true)}>{savedId ? 'Save changes' : 'Save progression'}</button></div>
+      <div className="progression-save-row"><button type="button" className="btn btn-primary" disabled={!chords.length || !validTempo || !validPattern || editingIndex >= 0} onClick={() => setSaveOpen(true)}>{savedId ? 'Save changes' : 'Save progression'}</button></div>
       {saveOpen && <SaveProgressionDialog name={title} grade={gradeChoice} estimate={estimate} onSave={save} onClose={() => setSaveOpen(false)} />}
       {editingIndex >= 0 && <p className="small muted">Update or cancel the chord edit before playing or saving.</p>}
       {!isAudioSupported() && <p className="small muted">Playback is unavailable because this browser does not support Web Audio. You can still build and save progressions.</p>}

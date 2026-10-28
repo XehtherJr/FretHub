@@ -32,6 +32,78 @@ describe('progression audio scheduler', () => {
     expect(schedule).toHaveBeenCalledTimes(2);
   });
 
+  it('schedules A-D-G-B-G-G+E4 accurately, then restarts the pattern at the next chord', async () => {
+    const schedule = vi.fn((_notes: (number | null)[], _when: number, _duration: number, _options?: unknown) => []);
+    audio.prepareStrummer.mockResolvedValue(schedule);
+    const onChord = vi.fn(); const onEnd = vi.fn();
+    const pattern = { mode: 'custom' as const, stepsPerBeat: 2 as const, steps: [
+      { kind: 'pick' as const, strings: [1] }, { kind: 'pick' as const, strings: [2] },
+      { kind: 'pick' as const, strings: [3] }, { kind: 'pick' as const, strings: [4] },
+      { kind: 'pick' as const, strings: [3] }, { kind: 'pick' as const, strings: [3, 5] },
+    ] };
+    startProgressionPlayback([
+      { midi: [null, 45, 52, 59, 60, 67], beats: 3 },
+      { midi: [43, 47, 50, 55, 59, 67], beats: 3 },
+    ], 120, false, { onChord, onEnd, onError: vi.fn() }, pattern);
+    await vi.advanceTimersByTimeAsync(1550);
+    expect(schedule.mock.calls.slice(0, 6).map((call) => call[0])).toEqual([[45], [52], [59], [60], [59], [59, 67]]);
+    expect(schedule.mock.calls[5][3]).toEqual({ direction: 'down', gap: 0 });
+    for (let index = 1; index < 6; index++) expect(schedule.mock.calls[index][1] - schedule.mock.calls[index - 1][1]).toBeCloseTo(0.25, 6);
+    expect(schedule.mock.calls[6][0]).toEqual([47]);
+    expect(schedule.mock.calls[6][1] - schedule.mock.calls[0][1]).toBeCloseTo(1.5, 6);
+    expect(onChord.mock.calls.map((call) => call[0])).toEqual([0, 1]);
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('mixes up/down strums, simultaneous picks and rests at the selected subdivision', async () => {
+    const schedule = vi.fn((_notes: (number | null)[], _when: number, _duration: number, _options?: unknown) => []);
+    audio.prepareStrummer.mockResolvedValue(schedule);
+    const pattern = { mode: 'custom' as const, stepsPerBeat: 2 as const, steps: [
+      { kind: 'down' as const }, { kind: 'rest' as const }, { kind: 'up' as const }, { kind: 'pick' as const, strings: [0, 2] },
+    ] };
+    const onEnd = vi.fn();
+    startProgressionPlayback([{ midi: [48, null, 55], beats: 2 }], 120, false, { onChord: vi.fn(), onEnd, onError: vi.fn() }, pattern);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(schedule.mock.calls.map((call) => call[0])).toEqual([[48, null, 55], [48, null, 55], [48, 55]]);
+    expect(schedule.mock.calls.map((call) => call[1] - schedule.mock.calls[0][1])).toEqual([0, 0.5, 0.75]);
+    expect(schedule.mock.calls[0][3]).toMatchObject({ direction: 'down' });
+    expect(schedule.mock.calls[1][3]).toMatchObject({ direction: 'up' });
+    expect(schedule.mock.calls[2][3]).toEqual({ direction: 'down', gap: 0 });
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it('arpeggiates sounding strings in physical order, skipping muted strings and repeating', async () => {
+    const schedule = vi.fn((_notes: (number | null)[], _when: number, _duration: number, _options?: unknown) => []);
+    audio.prepareStrummer.mockResolvedValue(schedule);
+    startProgressionPlayback([{ midi: [null, 48, null, 55, 60], beats: 2 }], 120, false,
+      { onChord: vi.fn(), onEnd: vi.fn(), onError: vi.fn() }, { mode: 'arpeggio', stepsPerBeat: 2 });
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(schedule.mock.calls.map((call) => call[0])).toEqual([[48], [55], [60], [48]]);
+    expect(schedule.mock.calls.every((call) => (call[3] as { gap: number }).gap === 0)).toBe(true);
+  });
+
+  it('loops a custom pattern, cancels its sources, and does not fire missed steps in a burst', async () => {
+    const sources: { stop: ReturnType<typeof vi.fn>; onended: null }[] = [];
+    const schedule = vi.fn((_notes: (number | null)[], _when: number, _duration: number, _options?: unknown) => {
+      const node = { stop: vi.fn(), onended: null }; sources.push(node); return [node];
+    });
+    audio.prepareStrummer.mockResolvedValue(schedule);
+    const player = startProgressionPlayback([{ midi: [48, 52, 55], beats: 2 }], 120, true,
+      { onChord: vi.fn(), onEnd: vi.fn(), onError: vi.fn() },
+      { mode: 'custom', stepsPerBeat: 2, steps: [{ kind: 'pick', strings: [0] }, { kind: 'pick', strings: [2] }] });
+    await vi.advanceTimersByTimeAsync(350);
+    expect(schedule.mock.calls.map((call) => call[0])).toEqual([[48], [55]]);
+    vi.setSystemTime(5000);
+    await vi.advanceTimersByTimeAsync(25);
+    expect(schedule).toHaveBeenCalledTimes(3);
+    expect(schedule.mock.calls[2][1]).toBeGreaterThanOrEqual(5);
+    player.stop();
+    expect(sources.every((source) => source.stop.mock.calls.length === 1)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(schedule).toHaveBeenCalledTimes(3);
+  });
+
   it('loops in order and stops both scheduled sound and future repetitions', async () => {
     const sources: { stop: ReturnType<typeof vi.fn>; onended: null }[] = [];
     audio.prepareStrummer.mockResolvedValue(vi.fn(() => { const node = { stop: vi.fn(), onended: null }; sources.push(node); return [node]; }));
@@ -84,5 +156,7 @@ describe('progression audio scheduler', () => {
     expect(schedule).not.toHaveBeenCalled();
     expect(() => startProgressionPlayback([], 90, false, { onChord: vi.fn(), onEnd: vi.fn(), onError: vi.fn() })).toThrow();
     expect(() => startProgressionPlayback([{ midi: [48], beats: 0 }], 90, false, { onChord: vi.fn(), onEnd: vi.fn(), onError: vi.fn() })).toThrow();
+    expect(() => startProgressionPlayback([{ midi: [48], beats: 1 }], 90, false, { onChord: vi.fn(), onEnd: vi.fn(), onError: vi.fn() },
+      { mode: 'custom', stepsPerBeat: 2, steps: [{ kind: 'pick', strings: [1] }] })).toThrow(/invalid/);
   });
 });

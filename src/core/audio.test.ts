@@ -97,6 +97,12 @@ describe('scheduled guitar sequences', () => {
     expect(started).toEqual([{ kind: 'sample', when: 6 }, { kind: 'fallback', when: 6.035 }]);
     expect(sources).toHaveLength(2);
     expect(sources.every((source) => typeof source.stop === 'function')).toBe(true);
+    started.length = 0;
+    schedule([60, null, 64], 7, 1, { gap: 0 });
+    expect(started.map((entry) => entry.when)).toEqual([7, 7]);
+    started.length = 0;
+    schedule([60, null, 64], 8, 1, { direction: 'up', gap: 0.02 });
+    expect(started).toEqual([{ kind: 'fallback', when: 8 }, { kind: 'sample', when: 8.02 }]);
   });
 
   it('stops an already-scheduled string if a later string cannot be created', async () => {

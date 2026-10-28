@@ -58,6 +58,17 @@ describe('user progressions', () => {
     expect(estimateProgressionDifficulty([step([null, 5, 4, 0, 3, 0])], 2, 90).level).toBe('beginner');
   });
 
+  it('accounts for modeled double barres, interior skips and loop-back change time without judging a player', () => {
+    const twoBarres = estimateProgressionDifficulty([step([8, 7, 8, 7, 8, 8])], 0, 90);
+    expect(twoBarres.level).toBe('advanced');
+    expect(twoBarres.reasons).toContain('two suggested barres');
+    const skipped = estimateProgressionDifficulty([step([3, null, 2, 0, 1, 0])], 0, 90);
+    expect(skipped.reasons).toContain('interior skipped strings need selective picking or damping');
+    const chords = [step([null, 3, 2, 0, 1, 0]), { ...step([null, 3, 2, 0, 1, 0]), id: 'two', beats: 1 }];
+    expect(estimateProgressionDifficulty(chords, 0, 90).reasons).not.toContain('quick chord changes');
+    expect(estimateProgressionDifficulty(chords, 0, 90, true).reasons).toContain('quick chord changes');
+  });
+
   it('validates saved shapes without imposing a fixed progression length', () => {
     const item = base();
     expect(validProgression(item, 'song')).toBe(true);

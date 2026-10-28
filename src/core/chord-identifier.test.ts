@@ -69,6 +69,29 @@ describe('chord identification', () => {
     expect(identifyChord(pcs(['C', 'E', 'Bb', 'Db']), noteToPc('C')).some((match) => match.chord.typeId === 'dominant-alt' && match.chord.rootName === 'C')).toBe(true);
   });
 
+  it('distinguishes a 7alt family interpretation from missing required tones', () => {
+    const notes = pcs(['C', 'E', 'Bb', 'Db']);
+    const matches = identifyChord(notes, noteToPc('C'));
+    const family = matches.find((match) => match.chord.shortName === 'C7alt')!;
+    expect(family.strength).toBe('family');
+    expect(family.missingPcs).toEqual(expect.arrayContaining(pcs(['Eb', 'Gb', 'Ab'])));
+    expect(describeMatch(family)).toContain('Played alterations: Db (b9)');
+    expect(describeMatch(family)).toContain('Other alterations are alternatives, not required together');
+    expect(describeMatch(family)).not.toContain('Not played:');
+    // The more-specific 7b9 interpretation, even without its fifth, ranks first.
+    const specific = matches.find((match) => match.chord.typeId === 'dominant-7b9')!;
+    expect(specific.rank).toBeLessThan(family.rank);
+
+    const rootless = identifyChord(pcs(['E', 'Bb', 'Db']), noteToPc('E'), { assumedRoot: noteToPc('C') })
+      .find((match) => match.chord.typeId === 'dominant-alt')!;
+    expect(rootless).toMatchObject({ strength: 'partial', rootAssumed: true });
+    expect(describeMatch(rootless)).toContain('Root C assumed, not played');
+    const slash = identifyChord(pcs(['A', 'C', 'E', 'Bb', 'Db']), noteToPc('A'))
+      .find((match) => match.chord.shortName === 'C7alt/A')!;
+    expect(slash.strength).toBe('slash');
+    expect(describeMatch(slash)).toContain('non-chord bass, not an inversion');
+  });
+
   it.each([
     ['C', [48, 52, 55, 60, 64], 'major'],
     ['G', [43, 47, 50, 55, 59, 67], 'major'],

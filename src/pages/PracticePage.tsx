@@ -4,57 +4,14 @@ import Fretboard, { FretMarkerData } from '@/components/Fretboard';
 import ChordDiagram from '@/components/ChordDiagram';
 import Tuner from '@/components/Tuner';
 import Metronome from '@/components/Metronome';
-import { buildChord, BuiltChord } from '@core/chords';
-import { CHORD_TYPES } from '@core/chord-definitions';
+import { makeChordQuestion, type ChordQuestion } from '@core/chordQuiz';
 import { getTuning } from '@core/tunings';
 import { generateVoicings, fretPc } from '@core/voicing-engine';
-import { ROOT_NOTES, pcToNote } from '@core/notes';
+import { pcToNote } from '@core/notes';
 import { getQuizProgress, recordQuizAnswer } from '@core/storage';
 import { chordPath } from '@/lib/urls';
 
 type Tab = 'chord-quiz' | 'note-quiz' | 'metronome' | 'tuner';
-
-const QUIZ_TYPES = [
-  'major', 'minor', 'diminished', 'augmented', 'sus2', 'sus4', 'power',
-  'dominant-7', 'major-7', 'minor-7', 'half-diminished',
-];
-
-function pick<T>(list: T[]): T {
-  return list[Math.floor(Math.random() * list.length)];
-}
-
-interface ChordQuestion {
-  chord: BuiltChord;
-  choices: string[];
-}
-
-function makeChordQuestion(): ChordQuestion {
-  const typeId = pick(QUIZ_TYPES);
-  const root = pick(ROOT_NOTES);
-  const chord = buildChord(root, typeId);
-  const correct = chord.shortName;
-
-  const distractors = new Set<string>([correct]);
-  // Same root, different quality.
-  const sameRoot = CHORD_TYPES.filter((t) => QUIZ_TYPES.includes(t.id) && t.id !== typeId);
-  while (distractors.size < 4) {
-    const t = pick(sameRoot);
-    distractors.add(buildChord(root, t.id).shortName);
-  }
-  // Sometimes swap one distractor for the same quality on a nearby root.
-  if (Math.random() < 0.5) {
-    const otherRoot = pick(ROOT_NOTES.filter((n) => n !== root));
-    const alt = buildChord(otherRoot, typeId).shortName;
-    if (!distractors.has(alt)) {
-      const arr = [...distractors];
-      arr[arr.length - 1] = alt;
-      distractors.clear();
-      arr.forEach((d) => distractors.add(d));
-    }
-  }
-  const choices = [...distractors].sort(() => Math.random() - 0.5);
-  return { chord, choices };
-}
 
 // ------------------------------------------------------------- chord quiz
 function ChordQuiz({ onAnswered }: { onAnswered: (correct: boolean, streak: number) => void }) {
@@ -66,7 +23,7 @@ function ChordQuiz({ onAnswered }: { onAnswered: (correct: boolean, streak: numb
 
   const voicing = useMemo(() => {
     const [first] = generateVoicings(question.chord.pitchClasses, tuning, question.chord.rootPc, {
-      maxResults: 1,
+      requiredBass: question.chord.rootPc, maxResults: 1,
     });
     return first;
   }, [question, tuning]);

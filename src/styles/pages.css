@@ -161,6 +161,12 @@
 .voicing-item:nth-child(4n) { border-right: 0; }
 .voicing-item .btn-primary { background: transparent; border-color: #605541; color: var(--brass-bright); }
 .voicing-item .btn-primary:hover:not(:disabled) { background: #353329; color: var(--cream); }
+.voicing-method { max-width: 75ch; color: var(--text-dim); margin: 0.8rem 0; }
+.voicing-method summary { cursor: pointer; color: var(--cream); }
+.voicing-method p { margin: 0.6rem 0; }
+.voicing-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem 1.2rem; margin-top: 1rem; }
+.voicing-pagination label { margin: 0; }
+.voicing-pagination input { width: 5rem; min-width: 0; }
 @media (max-width: 700px) {
   .theory-level { grid-template-columns: 1fr; gap: 0.9rem; }
   .voicing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

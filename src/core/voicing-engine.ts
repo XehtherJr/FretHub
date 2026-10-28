@@ -2,9 +2,9 @@
  * voicing-engine.ts — algorithmic guitar chord voicing generator.
  *
  * Given a set of chord-tone pitch classes, a tuning (any number of strings),
- * a fret window and playability constraints, the engine enumerates every
- * plausible fingering via depth-first search with aggressive pruning, then
- * validates and ranks the results.
+ * a fret window and playability constraints, the engine searches candidate
+ * shapes with pruning, then validates and ranks them. A node budget can stop
+ * the search early; fingering and comfort are necessarily heuristic.
  *
  * The engine has no DOM or React dependency and is fully unit-tested.
  */
@@ -27,7 +27,10 @@ export interface Voicing {
   frets: (number | null)[];
   /** Per-string fingering: 0 = open, 'x' = muted, 1..4 = fretting fingers. */
   fingers: Finger[];
+  /** First barre, retained for callers that only need to know whether one exists. */
   barre?: BarreInfo;
+  /** All barres when more than one is suggested. */
+  barres?: BarreInfo[];
   /** Sounding MIDI notes per string (null when muted). */
   midi: (number | null)[];
   /** Sounding pitch classes low-to-high. */
@@ -40,11 +43,13 @@ export interface Voicing {
   fingerCount: number;
   hasOpen: boolean;
   mutedCount: number;
+  /** Uncalibrated ranking proxy; lower is preferred, not a measured difficulty. */
   score: number;
   playability: 'beginner' | 'intermediate' | 'advanced';
 }
 
 export interface VoicingOptions {
+  /** Lowest allowed fretted note; open strings remain possible when allowOpen is true. */
   minFret?: number;
   maxFret?: number;
   /** Maximum distance between lowest and highest fretted notes. */
@@ -61,8 +66,18 @@ export interface VoicingOptions {
   requiredVoicing?: number[];
   maxResults?: number;
   allowBarre?: boolean;
-  /** Hard safety cap on DFS nodes to guarantee fast responses. */
+  /** Hard cap on DFS nodes; elapsed time also depends on the device and results. */
   nodeBudget?: number;
+  /** Order results before applying maxResults. */
+  sortBy?: 'score' | 'position';
+}
+
+export interface VoicingSearchResult {
+  voicings: Voicing[];
+  /** Number found before applying the result limit (a lower bound if searchTruncated). */
+  totalFound: number;
+  searchTruncated: boolean;
+  resultLimitReached: boolean;
 }
 
 const DEFAULTS: Required<Omit<VoicingOptions, 'requiredBass' | 'allowedOmissions' | 'requiredOneOf' | 'requiredVoicing'>> = {
@@ -74,6 +89,7 @@ const DEFAULTS: Required<Omit<VoicingOptions, 'requiredBass' | 'allowedOmissions
   maxResults: 24,
   allowBarre: true,
   nodeBudget: 250_000,
+  sortBy: 'score',
 };
 
 /** Pitch class produced by playing `fret` on a given open string. */
@@ -96,8 +112,7 @@ function candidateFrets(
   for (const tone of toneSet) {
     const first = normalizePc(tone - open); // 0..11
     for (let f = first; f <= maxFret; f += 12) {
-      if (f < minFret) continue;
-      if (f === 0 && !allowOpen) continue;
+      if (f === 0 ? !allowOpen : f < minFret) continue;
       frets.push(f);
     }
   }
@@ -107,71 +122,130 @@ function candidateFrets(
 interface FingeringResult {
   fingers: Finger[];
   barre?: BarreInfo;
+  barres?: BarreInfo[];
   fingerCount: number;
 }
 
+interface BarreCandidate extends BarreInfo { indices: number[] }
+interface FingerGroup { fret: number; indices: number[] }
+
 /**
- * Assign fingers conservatively: individual fretted notes need individual
- * fingers unless the index finger can barre the lowest fret across them.
- * This is a playability heuristic, not a substitute for a player's fingering.
+ * Suggest a structurally consistent fingering, not a biomechanical guarantee.
+ * Prefer separate fingers when they fit, then one barre, then two barres.
+ * An earlier-fret barre is preferred when several one-barre solutions fit;
+ * a higher partial barre can also coexist with lower fretted notes.
+ * See docs/voicing-heuristics.md for evidence and limits of these preferences.
  */
 export function assignFingering(
   frets: (number | null)[],
   allowBarre: boolean,
 ): FingeringResult | null {
-  const fingers: Finger[] = frets.map((fret) => fret === null ? 'x' : 0);
   const fretted = frets.map((fret, i) => ({ fret, i }))
     .filter((entry): entry is { fret: number; i: number } => entry.fret !== null && entry.fret > 0);
-  if (!fretted.length) return { fingers, fingerCount: 0 };
 
-  const lowest = Math.min(...fretted.map((entry) => entry.fret));
-  const lowestIndices = fretted.filter((entry) => entry.fret === lowest).map((entry) => entry.i);
-  let barre: BarreInfo | undefined;
-  let coveredCount = 0;
-  if (allowBarre) {
-    for (let a = 0; a < lowestIndices.length; a++) for (let b = a + 1; b < lowestIndices.length; b++) {
-      const from = lowestIndices[a];
-      const to = lowestIndices[b];
-      // Conservatively avoid a barre across an open or muted string. Higher
-      // fretted notes between endpoints are fine (as in a standard F shape).
-      if (!frets.slice(from, to + 1).every((fret) => fret !== null && fret >= lowest)) continue;
-      const covered = lowestIndices.filter((index) => index >= from && index <= to).length;
-      if (covered > coveredCount) { barre = { fret: lowest, stringFrom: from, stringTo: to }; coveredCount = covered; }
+  const makeResult = (barres: BarreCandidate[]): FingeringResult | null => {
+    const assigned = new Set<number>();
+    const groups: FingerGroup[] = [];
+    for (const barre of barres) {
+      if (barre.indices.some((index) => assigned.has(index))) return null;
+      barre.indices.forEach((index) => assigned.add(index));
+      groups.push({ fret: barre.fret, indices: barre.indices });
+    }
+    for (const entry of fretted) if (!assigned.has(entry.i)) groups.push({ fret: entry.fret, indices: [entry.i] });
+    if (groups.length > 4) return null;
+    const fingers: Finger[] = frets.map((fret) => fret === null ? 'x' : 0);
+    groups.sort((a, b) => a.fret - b.fret || a.indices[0] - b.indices[0]).forEach((group, index) => {
+      for (const stringIndex of group.indices) fingers[stringIndex] = (index + 1) as Finger;
+    });
+    const cleanBarres = barres.map(({ fret, stringFrom, stringTo }) => ({ fret, stringFrom, stringTo }));
+    return {
+      fingers,
+      ...(cleanBarres.length ? { barre: cleanBarres[0] } : {}),
+      ...(cleanBarres.length > 1 ? { barres: cleanBarres } : {}),
+      fingerCount: groups.length,
+    };
+  };
+
+  const separate = makeResult([]);
+  if (separate) return separate;
+  if (!allowBarre) return null;
+
+  const candidates: BarreCandidate[] = [];
+  for (const fret of [...new Set(fretted.map((entry) => entry.fret))].sort((a, b) => a - b)) {
+    const indices = fretted.filter((entry) => entry.fret === fret).map((entry) => entry.i);
+    for (let a = 0; a < indices.length; a++) for (let b = a + 1; b < indices.length; b++) {
+      const from = indices[a];
+      const to = indices[b];
+      // Conservatively avoid open, muted and lower-fretted strings within the
+      // barre. Higher fretted notes within it are compatible (as in F major).
+      if (!frets.slice(from, to + 1).every((value) => value !== null && value >= fret)) continue;
+      candidates.push({ fret, stringFrom: from, stringTo: to, indices: indices.filter((index) => index >= from && index <= to) });
     }
   }
-
-  const remaining = fretted.filter(({ fret, i }) => !(barre && fret === barre.fret && i >= barre.stringFrom && i <= barre.stringTo));
-  const fingerCount = remaining.length + (barre ? 1 : 0);
-  if (fingerCount > 4) return null;
-  if (barre) for (let i = barre.stringFrom; i <= barre.stringTo; i++) if (frets[i] === barre.fret) fingers[i] = 1;
-  remaining.sort((a, b) => a.fret - b.fret || a.i - b.i).forEach((entry, index) => {
-    fingers[entry.i] = (index + (barre ? 2 : 1)) as Finger;
-  });
-  return { fingers, barre, fingerCount };
+  candidates.sort((a, b) => a.fret - b.fret || b.indices.length - a.indices.length || a.stringFrom - b.stringFrom || a.stringTo - b.stringTo);
+  for (const candidate of candidates) {
+    const result = makeResult([candidate]);
+    if (result) return result;
+  }
+  for (let a = 0; a < candidates.length; a++) for (let b = a + 1; b < candidates.length; b++) {
+    const result = makeResult([candidates[a], candidates[b]]);
+    if (result) return result;
+  }
+  return null;
 }
 
-function scoreVoicing(v: Omit<Voicing, 'score' | 'playability'>, rootPc: number): number {
-  let score = 0;
-  score += v.span * 2.0;
-  score += v.mutedCount * 1.8;
-  score += v.fingerCount * 0.5;
-  if (v.barre) score += 1.0;
-  score += v.position * 0.3;
-  const openCount = v.frets.filter((f) => f === 0).length;
-  score -= Math.min(openCount, 3) * 0.5;
-  const highest = Math.max(...v.frets.filter((f): f is number => f !== null).map((f) => f));
-  score += highest * 0.05;
-  // Root-position voicings are the canonical reference; inversions rank later
-  // unless the caller explicitly requested a bass note.
-  if (v.bassPc === rootPc) score -= 1.8;
-  else score += 2.2;
+/** Named, deliberately uncalibrated preferences; see docs/voicing-heuristics.md. */
+export const VOICING_EASE_WEIGHTS = {
+  span: 2,
+  edgeMuted: 0.5,
+  interiorMuted: 2,
+  finger: 0.5,
+  barre: 1.25,
+  position: 0.3,
+  lowOpen: -0.5,
+} as const;
+
+type VoicingFeatures = Pick<Voicing, 'frets' | 'span' | 'fingerCount' | 'position' | 'barre' | 'barres'>;
+
+/** Muted strings between sounding strings need selective picking or damping. */
+export function interiorMutedCount(frets: (number | null)[]): number {
+  const first = frets.findIndex((fret) => fret !== null);
+  let last = frets.length - 1;
+  while (last >= 0 && frets[last] === null) last--;
+  return first < 0 ? 0 : frets.slice(first, last + 1).filter((fret) => fret === null).length;
+}
+
+/** A ranking proxy for an isolated grip, not a measured physical difficulty. */
+export function estimateVoicingEase(v: VoicingFeatures): number {
+  const interior = interiorMutedCount(v.frets);
+  const muted = v.frets.filter((fret) => fret === null).length;
+  const barres = v.barres?.length ?? (v.barre ? 1 : 0);
+  const highest = Math.max(0, ...v.frets.filter((fret): fret is number => fret !== null));
+  // Open strings are treated as a beginner-friendly cue only in low positions;
+  // distant fretted notes plus open strings are not assumed to be easy.
+  const lowOpen = highest <= 4 ? Math.min(3, v.frets.filter((fret) => fret === 0).length) : 0;
+  const w = VOICING_EASE_WEIGHTS;
+  const score = v.span * w.span + (muted - interior) * w.edgeMuted + interior * w.interiorMuted
+    + v.fingerCount * w.finger + barres * w.barre + v.position * w.position + lowOpen * w.lowOpen;
   return Math.round(score * 100) / 100;
 }
 
-function playability(v: { barre?: BarreInfo; span: number; fingerCount: number; position: number }): Voicing['playability'] {
-  if (!v.barre && v.span <= 3 && v.fingerCount <= 3) return 'beginner';
-  if ((v.barre && v.position >= 5) || v.span >= 4 || v.fingerCount >= 4) return 'advanced';
-  return 'intermediate';
+/** Explain the coarse visual grade independently of chord identity or bass. */
+export function estimateVoicingDifficulty(v: VoicingFeatures): { level: Voicing['playability']; reasons: string[] } {
+  const barreCount = v.barres?.length ?? (v.barre ? 1 : 0);
+  const interior = interiorMutedCount(v.frets);
+  const reasons: string[] = [];
+  if (barreCount > 1) reasons.push('two barres');
+  else if (barreCount) reasons.push('barre');
+  if (v.span >= 4) reasons.push('wide fret span');
+  else if (v.span >= 3) reasons.push('fret stretch');
+  if (v.fingerCount >= 4) reasons.push('four fretting fingers');
+  if (interior) reasons.push('interior muted string requires selective picking or damping');
+  if (v.position >= 5) reasons.push('higher fret position');
+  const level = barreCount > 1 || v.span >= 4 || interior >= 2 ? 'advanced'
+    : barreCount || v.span >= 3 || v.fingerCount >= 4 || interior || v.position >= 5 ? 'intermediate'
+      : 'beginner';
+  return { level, reasons: reasons.length ? reasons : ['compact fingering'] };
 }
 
 /**
@@ -179,15 +253,15 @@ function playability(v: { barre?: BarreInfo; span: number; fingerCount: number; 
  *
  * @param chordPcs  distinct pitch classes that define the chord
  * @param tuning    instrument tuning (6, 7 or 8 strings supported)
- * @param rootPc    chord root, used for ranking root-position voicings first
+ * @param rootPc    chord root, used for root-bass tie breaks and registered voicings
  * @param options   fret window and playability constraints
  */
-export function generateVoicings(
+export function searchVoicings(
   chordPcs: number[],
   tuning: Tuning,
   rootPc: number = chordPcs[0],
   options: VoicingOptions = {},
-): Voicing[] {
+): VoicingSearchResult {
   const opts = { ...DEFAULTS, ...options };
   const toneSet = new Set(chordPcs.map(normalizePc));
   const omissions = new Set((options.allowedOmissions ?? []).map(normalizePc));
@@ -201,9 +275,9 @@ export function generateVoicings(
     const frets = candidateFrets(
       tuning, i, toneSet, opts.minFret, opts.maxFret, opts.allowOpen,
     );
-    // Keep the search tractable: nearest candidates plus a muted option.
-    const trimmed = frets.slice(0, 5);
-    return [-1, ...trimmed]; // -1 sentinel = muted
+    // Search the entire requested window. Trimming by pitch count silently
+    // discarded valid upper-fret shapes, especially for extended chords.
+    return [-1, ...frets]; // -1 sentinel = muted
   });
 
   const results: Voicing[] = [];
@@ -303,7 +377,7 @@ export function generateVoicings(
 
   function evaluate(): void {
     const sounding = current.filter((f): f is number => f !== null);
-    if (sounding.length < 2) return;
+    if (sounding.length < 2 || (opts.minFret > 0 && !sounding.some((fret) => fret > 0))) return;
 
     // All non-omittable tones must be present; nothing outside the chord allowed.
     for (const pc of toneSet) {
@@ -336,6 +410,7 @@ export function generateVoicings(
       frets: [...current],
       fingers: fingering.fingers,
       barre: fingering.barre,
+      ...(fingering.barres ? { barres: fingering.barres } : {}),
       midi,
       pitchClasses: pitchClasses.filter((pc): pc is number => pc !== null),
       bassPc,
@@ -348,13 +423,46 @@ export function generateVoicings(
 
     results.push({
       ...partial,
-      score: scoreVoicing(partial, rootPc),
-      playability: playability(partial),
+      score: estimateVoicingEase(partial),
+      playability: estimateVoicingDifficulty(partial).level,
     });
   }
 
   dfs(0);
 
-  results.sort((a, b) => a.score - b.score || a.span - b.span || a.position - b.position);
-  return results.slice(0, opts.maxResults);
+  // Alternatives in a required-one-of group (such as 7alt alterations) are
+  // not incomplete just because a different valid alteration was chosen.
+  const missingCount = new Map(results.map((voicing) => [voicing, [...omissions].filter((pc) => toneSet.has(pc) && !requiredOneOf.has(pc) && !voicing.pitchClasses.includes(pc)).length]));
+  const root = normalizePc(rootPc);
+  const compareFrets = (a: Voicing, b: Voicing) => {
+    for (let i = 0; i < a.frets.length; i++) {
+      const difference = (a.frets[i] ?? -1) - (b.frets[i] ?? -1);
+      if (difference) return difference;
+    }
+    return 0;
+  };
+  results.sort((a, b) => {
+    const primary = opts.sortBy === 'position' ? a.position - b.position : a.score - b.score;
+    // Completeness and then root bass break ties; neither is a claim about
+    // hand difficulty, and neither filters out inversions or omissions.
+    return primary || missingCount.get(a)! - missingCount.get(b)!
+      || (opts.sortBy === 'position' ? a.score - b.score : a.position - b.position)
+      || Number(b.bassPc === root) - Number(a.bassPc === root) || compareFrets(a, b);
+  });
+  return {
+    voicings: results.slice(0, opts.maxResults),
+    totalFound: results.length,
+    searchTruncated: budgetExceeded,
+    resultLimitReached: results.length > opts.maxResults,
+  };
+}
+
+/** Convenience wrapper for callers that only need the ranked shapes. */
+export function generateVoicings(
+  chordPcs: number[],
+  tuning: Tuning,
+  rootPc: number = chordPcs[0],
+  options: VoicingOptions = {},
+): Voicing[] {
+  return searchVoicings(chordPcs, tuning, rootPc, options).voicings;
 }

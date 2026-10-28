@@ -52,7 +52,7 @@ export default function SaveProgressionDialog({ name, grade, estimate, onSave, o
         <p className="small muted">Name your sequence and choose a difficulty. You can change both later.</p>
         <div className="field"><label htmlFor="progression-title">Progression name</label><input ref={nameInput} id="progression-title" maxLength={100} required value={draftName} onChange={(event) => setDraftName(event.target.value)} /></div>
         <div className="field"><label htmlFor="progression-grade">Difficulty</label><select id="progression-grade" value={draftGrade} onChange={(event) => setDraftGrade(event.target.value as GradeChoice)}><option value="auto">Automatic estimate</option>{DIFFICULTY_LEVELS.map((level) => <option key={level} value={level}>{titleCase(level)}</option>)}</select></div>
-        <p className="small muted">{draftGrade === 'auto' ? 'Estimated' : 'Your label'}: <strong>{titleCase(draftGrade === 'auto' ? estimate.level : draftGrade)}</strong>. The estimate considers fingering, position changes and tempo ({estimate.reasons.join('; ')}); it is not a guarantee of playability.</p>
+        <p className="small muted">{draftGrade === 'auto' ? 'Estimated' : 'Your label'}: <strong>{titleCase(draftGrade === 'auto' ? estimate.level : draftGrade)}</strong>. The estimate considers fingering, position changes and tempo ({estimate.reasons.join('; ')}); it is not a guarantee of playability and does not grade picking-pattern coordination.</p>
         {error && <p role="alert" className="small">{error}</p>}
         <div className="save-progression-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn btn-primary">Save progression</button></div>
       </form>

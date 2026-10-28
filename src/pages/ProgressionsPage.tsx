@@ -48,7 +48,7 @@ export default function ProgressionsPage() {
     const audio = getAudioContext();
     for (const pc of chords) {
       const chord = buildChord(pc.rootName, pc.chordTypeId);
-      const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
+      const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { requiredBass: chord.rootPc, maxResults: 1 });
       if (voicing) {
         const when = audio.currentTime + 0.02;
         voicing.midi.filter((m): m is number => m !== null).forEach((midi, i) => {
@@ -132,7 +132,7 @@ export default function ProgressionsPage() {
       <div className="grid progression-grid">
         {progression.map((pc, i) => {
           const chord = buildChord(pc.rootName, pc.chordTypeId);
-          const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
+          const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { requiredBass: chord.rootPc, maxResults: 1 });
           return (
             <div className="card progression-card" key={`${pc.roman}-${i}`}>
               <span className="pill">{pc.roman}</span>
@@ -186,7 +186,7 @@ export default function ProgressionsPage() {
           <div className="grid progression-grid" style={{ marginTop: '1rem' }}>
             {customChords.map((pc, i) => {
               const chord = buildChord(pc.rootName, pc.chordTypeId);
-              const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
+              const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { requiredBass: chord.rootPc, maxResults: 1 });
               return (
                 <div className="card progression-card" key={i}>
                   <span className="pill">{pc.roman}</span>

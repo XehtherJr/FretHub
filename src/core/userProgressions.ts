@@ -1,8 +1,10 @@
 /** User-created progressions keep the actual physical fingering, not a guessed chord formula. */
 import { fretToMidi, normalizePc } from './notes';
-import { TUNINGS, getTuning, applyCapo } from './tunings';
-import { assignFingering, generateVoicings } from './voicing-engine';
-import { buildChord, chordVoicingConstraints } from './chords';
+import { TUNINGS, getTuning } from './tunings';
+import { assignFingering, interiorMutedCount } from './voicing-engine';
+import { buildChord } from './chords';
+import { searchChordReference } from './referenceVoicing';
+import { validPlaybackPattern, type PlaybackPattern } from './pickingPattern';
 
 export const DIFFICULTY_LEVELS = ['beginner', 'novice', 'intermediate', 'advanced'] as const;
 export type ProgressionDifficulty = typeof DIFFICULTY_LEVELS[number];
@@ -26,6 +28,8 @@ export interface SavedProgression {
   loop: boolean;
   difficulty: ProgressionDifficulty;
   difficultyMode: DifficultyMode;
+  /** Omitted in older saves: one downstroke at the start of each chord. */
+  pattern?: PlaybackPattern;
   chords: ProgressionStep[];
 }
 
@@ -44,26 +48,22 @@ export function progressionMidi(frets: (number | null)[], tuningId: string, capo
 }
 
 /** A generated starting shape can be edited on the physical neck before adding it. */
-export function referenceShape(root: string, typeId: string, tuningId: string, capo: number, bass?: string): { frets: (number | null)[]; name: string } | null {
+export function searchReferenceShape(root: string, typeId: string, tuningId: string, capo: number, bass?: string): { shape: { frets: (number | null)[]; name: string } | null; searchTruncated: boolean } {
   const chord = buildChord(root, typeId, bass);
-  const tuning = getTuning(tuningId);
-  const capoTuning = applyCapo(tuning, capo);
-  const constraints = chordVoicingConstraints(chord);
-  const options = {
-    ...constraints,
-    requiredBass: bass ? chord.bassPc : undefined,
-    maxFret: Math.min(14, 24 - capo),
-    maxMuted: constraints.requiredVoicing ? Math.max(2, tuning.strings.length - constraints.requiredVoicing.length) : 2,
-    maxResults: 1,
-  };
-  const tones = bass && !chord.pitchClasses.includes(chord.bassPc) ? [...chord.pitchClasses, chord.bassPc] : chord.pitchClasses;
-  const complete = generateVoicings(tones, capoTuning, chord.rootPc, { ...options, allowedOmissions: [] });
-  const [voicing] = complete.length ? complete : generateVoicings(tones, capoTuning, chord.rootPc, options);
-  if (!voicing) return null;
+  const found = searchChordReference(chord, getTuning(tuningId), capo, { requiredBass: bass ? chord.bassPc : undefined });
+  const voicing = found.voicing;
   return {
-    frets: voicing.frets.map((fret) => fret === null || fret === 0 ? fret : fret + capo),
-    name: buildChord(root, typeId, voicing.bassPc ?? undefined).shortName,
+    shape: voicing ? {
+      frets: voicing.frets.map((fret) => fret === null || fret === 0 ? fret : fret + capo),
+      name: buildChord(root, typeId, voicing.bassPc ?? undefined).shortName,
+    } : null,
+    searchTruncated: found.searchTruncated,
   };
+}
+
+/** Compatibility helper for callers that only need the shape. */
+export function referenceShape(root: string, typeId: string, tuningId: string, capo: number, bass?: string): { frets: (number | null)[]; name: string } | null {
+  return searchReferenceShape(root, typeId, tuningId, capo, bass).shape;
 }
 
 /**
@@ -71,7 +71,7 @@ export function referenceShape(root: string, typeId: string, tuningId: string, c
  * physical span, likely barre/finger count, position, changes and tempo. A
  * player may override it; musical context and individual hands are not measured.
  */
-export function estimateProgressionDifficulty(chords: ProgressionStep[], capo: number, bpm: number): { level: ProgressionDifficulty; reasons: string[] } {
+export function estimateProgressionDifficulty(chords: ProgressionStep[], capo: number, bpm: number, loop = false): { level: ProgressionDifficulty; reasons: string[] } {
   let score = 0;
   const reasons = new Set<string>();
   for (const chord of chords) {
@@ -84,14 +84,18 @@ export function estimateProgressionDifficulty(chords: ProgressionStep[], capo: n
     else if (span === 4 || highest > 8) { score = Math.max(score, 3); reasons.add('large stretch or high position'); }
     else if (fingering.barre || span === 3 || highest > 5) { score = Math.max(score, 2); reasons.add('barre, stretch or higher position'); }
     else if (fingering.fingerCount >= 4 || highest > 3) { score = Math.max(score, 1); reasons.add('four-finger or higher-fret shape'); }
+    if (fingering?.barres && fingering.barres.length > 1) { score = Math.max(score, 3); reasons.add('two suggested barres'); }
+    const skipped = interiorMutedCount(relative);
+    if (skipped) { score = Math.max(score, skipped > 1 ? 3 : 2); reasons.add('interior skipped strings need selective picking or damping'); }
   }
-  for (let index = 1; index < chords.length; index++) {
-    const previous = chords[index - 1];
+  const transitions = chords.slice(1).map((chord, index) => [chords[index], chord] as const);
+  if (loop && chords.length > 1) transitions.push([chords[chords.length - 1], chords[0]]);
+  for (const [previous, next] of transitions) {
     const position = (chord: ProgressionStep) => {
       const fretted = chord.frets.filter((fret): fret is number => fret !== null && fret > 0);
       return fretted.length ? Math.min(...fretted) - capo : 0;
     };
-    const movement = Math.abs(position(chords[index]) - position(previous));
+    const movement = Math.abs(position(next) - position(previous));
     if (movement >= 6) { score = Math.max(score, 2); reasons.add('large position changes'); }
     else if (movement >= 3) { score = Math.max(score, 1); reasons.add('position changes'); }
     if (previous.beats * 60 / bpm < 1) { score = Math.max(score, 2); reasons.add('quick chord changes'); }
@@ -115,6 +119,7 @@ export function validProgression(value: unknown, expectedId?: string): value is 
   if (!DIFFICULTY_LEVELS.includes(item.difficulty as ProgressionDifficulty) || (item.difficultyMode !== 'auto' && item.difficultyMode !== 'manual')) return false;
   if (!Array.isArray(item.chords) || item.chords.length === 0) return false;
   const tuning = getTuning(item.tuningId);
+  if (item.pattern !== undefined && !validPlaybackPattern(item.pattern, tuning.strings.length)) return false;
   const ids = new Set<string>();
   return item.chords.every((chord) => {
     if (!chord || typeof chord.id !== 'string' || !chord.id || chord.id.length > 180 || ids.has(chord.id)) return false;
