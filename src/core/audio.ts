@@ -17,7 +17,7 @@ const sampleBuffers = new Map<number, Promise<AudioBuffer>>();
 /** Lazily create the AudioContext (browsers require a user gesture). */
 export function getAudioContext(): AudioContext {
   if (typeof window === 'undefined') throw new Error('Audio is only available in the browser.');
-  if (!ctx) {
+  if (!ctx || ctx.state === 'closed') {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     ctx = new Ctor();
     master = ctx.createGain();
@@ -101,14 +101,15 @@ function playSample(audio: AudioContext, buffer: AudioBuffer, samplePitch: numbe
   source.playbackRate.setValueAtTime(rate, when);
   const env = audio.createGain();
   const gain = 0.48 * Math.max(0, Math.min(1, options.velocity ?? 0.9));
+  const attack = Math.min(0.004, duration / 2);
   env.gain.setValueAtTime(0.0001, when);
-  env.gain.linearRampToValueAtTime(gain, when + 0.004);
-  env.gain.setValueAtTime(gain, Math.max(when + 0.004, when + duration - 0.12));
+  env.gain.linearRampToValueAtTime(gain, when + attack);
+  env.gain.setValueAtTime(gain, Math.max(when + attack, when + duration - 0.12));
   env.gain.linearRampToValueAtTime(0.0001, when + duration);
   source.connect(env);
   env.connect(master as GainNode);
   source.start(when);
-  source.stop(when + duration + 0.01);
+  source.stop(when + duration);
   return source;
 }
 
@@ -121,12 +122,12 @@ function playSynth(audio: AudioContext, midi: number, options: PluckOptions): Os
   osc.frequency.setValueAtTime(midiToFreq(midi), when);
   const env = audio.createGain();
   env.gain.setValueAtTime(0.0001, when);
-  env.gain.exponentialRampToValueAtTime(0.2 * (options.velocity ?? 0.9), when + 0.008);
+  env.gain.exponentialRampToValueAtTime(0.2 * (options.velocity ?? 0.9), when + Math.min(0.008, duration / 2));
   env.gain.exponentialRampToValueAtTime(0.0001, when + duration);
   osc.connect(env);
   env.connect(master as GainNode);
   osc.start(when);
-  osc.stop(when + duration + 0.05);
+  osc.stop(when + duration);
   return osc;
 }
 

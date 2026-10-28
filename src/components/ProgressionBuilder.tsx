@@ -42,7 +42,8 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   const [loop, setLoop] = useState(false);
   const [patternMode, setPatternMode] = useState<PatternMode>('single');
   const [stepsPerBeat, setStepsPerBeat] = useState<StepsPerBeat>(2);
-  const [patternText, setPatternText] = useState('5 4 3 2 3 3+1');
+  const [patternText, setPatternText] = useState('');
+  const [patternSelection, setPatternSelection] = useState<number[]>([]);
   const [gradeChoice, setGradeChoice] = useState<GradeChoice>('auto');
   const [label, setLabel] = useState('');
   const [labelCurrentShape, setLabelCurrentShape] = useState(false);
@@ -68,8 +69,10 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   const estimate = useMemo(() => estimateProgressionDifficulty(chords, instrument?.capo ?? capo, validTempo ? bpm : 90, loop), [chords, instrument, capo, bpm, validTempo, loop]);
   const compatible = !instrument || (instrument.tuningId === tuningId && instrument.capo === capo);
   const patternTuning = getTuning(instrument?.tuningId ?? tuningId);
+  const previousPatternStringCount = useRef(patternTuning.strings.length);
   const parsedPattern = useMemo(() => parsePickingPattern(patternText, patternTuning), [patternText, patternTuning]);
-  const validPattern = patternMode !== 'custom' || parsedPattern.steps !== null;
+  const pendingPatternSelection = patternMode === 'custom' && patternSelection.length > 0;
+  const validPattern = (patternMode !== 'custom' || parsedPattern.steps !== null) && !pendingPatternSelection;
   const playbackPattern: PlaybackPattern | undefined = patternMode === 'arpeggio' ? { mode: 'arpeggio', stepsPerBeat }
     : patternMode === 'custom' && parsedPattern.steps ? { mode: 'custom', stepsPerBeat, steps: parsedPattern.steps } : undefined;
   const selectedMidi = progressionMidi(selectedFrets, tuningId, capo);
@@ -95,6 +98,17 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   useEffect(() => () => { player.current?.stop(); player.current = null; }, []);
   useEffect(() => { if (!active) { stop(); setSaveOpen(false); } }, [active, stop]);
   useEffect(() => {
+    const oldCount = previousPatternStringCount.current;
+    const newCount = patternTuning.strings.length;
+    if (oldCount === newCount) return;
+    previousPatternStringCount.current = newCount;
+    // Preserve the player's string numbers when extra bass strings are added
+    // or removed, rather than keeping indices that now point at other strings.
+    const remapped = patternSelection.map((index) => index + newCount - oldCount).filter((index) => index >= 0 && index < newCount);
+    if (remapped.length !== patternSelection.length) notify('Some selected strings are unavailable in this tuning and were cleared.');
+    setPatternSelection(remapped);
+  }, [patternTuning.strings.length, patternSelection, notify]);
+  useEffect(() => {
     const refresh = () => setSaved(getProgressions());
     window.addEventListener(LIBRARY_CHANGE_EVENT, refresh);
     window.addEventListener('storage', refresh);
@@ -111,7 +125,8 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     setLoop(item.loop);
     setPatternMode(item.pattern?.mode ?? 'single');
     setStepsPerBeat(item.pattern?.stepsPerBeat ?? 2);
-    setPatternText(item.pattern?.mode === 'custom' ? formatPickingPattern(item.pattern.steps, getTuning(item.tuningId).strings.length) : '5 4 3 2 3 3+1');
+    setPatternText(item.pattern?.mode === 'custom' ? formatPickingPattern(item.pattern.steps, getTuning(item.tuningId).strings.length) : '');
+    setPatternSelection([]);
     setGradeChoice(item.difficultyMode === 'auto' ? 'auto' : item.difficulty);
     setSavedId(item.id);
     setEditingId(null);
@@ -127,16 +142,16 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     const requested = saved.find((item) => item.id === requestedId);
     if (requested) {
       loadedRequest.current = requestedId;
-      if (dirty || editingIndex >= 0) notify(`${requested.name} is now available below. Load it when you are ready to replace this unsaved draft.`);
+      if (dirty || editingIndex >= 0 || pendingPatternSelection) notify(`${requested.name} is now available below. Load it when you are ready to replace this unsaved draft.`);
       else load(requested);
     } else if (active) notify('That saved progression is not on this device yet. Sign in and sync, or choose another saved progression.');
-  }, [requestedId, saved, load, active, dirty, editingIndex, notify]);
+  }, [requestedId, saved, load, active, dirty, editingIndex, pendingPatternSelection, notify]);
 
-  const discardChanges = () => (!dirty && editingIndex < 0) || window.confirm('Discard unsaved changes to this progression?');
+  const discardChanges = () => (!dirty && editingIndex < 0 && !pendingPatternSelection) || window.confirm('Discard unsaved changes to this progression?');
   const newProgression = () => {
     if (!discardChanges()) return;
     stop(); setChords([]); setInstrument(null); setTitle('My progression'); setTempoText('90');
-    setLoop(false); setPatternMode('single'); setStepsPerBeat(2); setPatternText('5 4 3 2 3 3+1');
+    setLoop(false); setPatternMode('single'); setStepsPerBeat(2); setPatternText(''); setPatternSelection([]);
     setGradeChoice('auto'); setLabel(''); setLabelCurrentShape(false); setReference(null); setEditingId(null); setSavedId(null); setDirty(false);
     notify('New progression. Select a chord on the neck, or choose one below.');
   };
@@ -196,6 +211,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   };
   const save = (rawName: string, grade: GradeChoice): string | null => {
     if (!instrument || !chords.length || !validTempo || editingIndex >= 0) return 'Update or cancel the chord edit before saving.';
+    if (pendingPatternSelection) return 'Add the selected strings as a step or clear the selection before saving.';
     if (!validPattern) return 'Fix the picking pattern before saving.';
     const name = rawName.trim();
     if (!name || name.length > 100) return 'Give the progression a name of up to 100 characters.';
@@ -218,7 +234,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
       const callbacks = {
         onChord: (index: number) => { setCurrentChord(index); notify('Playing progression.'); },
         onEnd: () => { player.current = null; setPlaying(false); setCurrentChord(null); notify('Playback finished.'); },
-        onError: () => { player.current = null; setPlaying(false); setCurrentChord(null); notify('Audio could not be started. Please try again.'); },
+        onError: () => { player.current = null; setPlaying(false); setCurrentChord(null); notify('Audio stopped or could not start. Please try again.'); },
       };
       player.current = playbackPattern
         ? startProgressionPlayback(playbackChords, bpm, loop, callbacks, playbackPattern)
@@ -271,8 +287,13 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
 
       <ProgressionPatternEditor
         tuning={patternTuning} mode={patternMode} stepsPerBeat={stepsPerBeat} text={patternText}
+        steps={patternMode === 'custom' ? parsedPattern.steps : null} chords={chords}
+        selected={patternSelection} onSelectionChange={(value) => { stop(); setPatternSelection(value); }}
         error={patternMode === 'custom' ? parsedPattern.error : null}
-        onModeChange={(mode) => { stop(); setPatternMode(mode); setDirty(true); }}
+        onModeChange={(mode) => {
+          if (pendingPatternSelection && !window.confirm('Discard the selected strings that have not been added as a step?')) return;
+          stop(); setPatternMode(mode); setPatternSelection([]); setDirty(true);
+        }}
         onTimingChange={(value) => { stop(); setStepsPerBeat(value); setDirty(true); }}
         onTextChange={(value) => { stop(); setPatternText(value); setDirty(true); }}
       />

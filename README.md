@@ -48,12 +48,16 @@ bass-side string at the top; the selection arpeggio has slow, medium and fast sp
 
 Under **Picking & strumming**, choose one downstrum per chord (the default for older saves), a
 low-to-high arpeggio, or a custom pattern. Pick the number of equal steps per quarter-note beat.
-The same pattern repeats for each chord and restarts at the next chord; a picked string that is
-muted in that chord is silent. Enter string numbers or open tuning names, with spaces or dashes
-between steps: `A-D-G-B-G-G+E4` (or `5 4 3 2 3 3+1` in standard tuning) ends by picking G and high E
-at the same time. Use `down`, `up` and `rest` for strums and rests. String names refer to the tuning
-before the capo; include the octave or use a number when a name is ambiguous. **Build steps with
-buttons** offers the same controls without typing. Patterns are limited to 64 steps.
+The same pattern repeats within each chord and restarts at the next chord. A four-beat chord at one
+step per beat plays only its first four steps: increase the chord's beats or select more steps per
+beat if the pattern needs more room. The editor warns when steps won't fit or a selected string is
+muted. New custom patterns start empty. Enter string numbers or open tuning names, with spaces or
+dashes between steps: `A-D-G-B-G-G+E4` (or `5 4 3 2 3 3+1` in standard tuning) ends by picking G
+and high E at the same time. Use `down`, `up` and `rest` for strums and rests; a rest stops ringing
+notes. String names refer to the tuning before the capo; include the octave or use a number when a
+name is ambiguous. **Build steps with buttons** offers the same controls without typing: selected
+strings do not become part of the pattern until **Add picked step** is pressed. Patterns are limited
+to 64 steps.
 
 A saved progression retains its pattern, exact frets and muted/open strings, tuning and capo, not just chord
 names. Load it from the builder or Library; loading restores its instrument setup. Every progression

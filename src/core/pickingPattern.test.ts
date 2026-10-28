@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPickingPattern, parsePickingPattern, validPlaybackPattern } from './pickingPattern';
+import { analyzePickingPattern, formatPickingPattern, parsePickingPattern, validPlaybackPattern } from './pickingPattern';
 import { getTuning } from './tunings';
 
 const standard = getTuning('standard');
@@ -43,6 +43,23 @@ describe('progression picking patterns', () => {
     expect(parsePickingPattern('7', standard).error).toMatch(/outside/i);
     expect(parsePickingPattern('H', standard).error).toMatch(/not a string/i);
     expect(parsePickingPattern('', standard).error).toMatch(/at least one/i);
+  });
+
+  it('reports steps cut off at chord changes and picks of muted strings', () => {
+    const steps = parsePickingPattern('6 5 3+1 rest 2 down', standard).steps!;
+    const chords = [
+      { frets: [null, 3, 2, 0, 1, 0], beats: 4 },
+      { frets: [3, 2, 0, 0, 0, 3], beats: 6 },
+    ];
+    expect(analyzePickingPattern(steps, 1, chords)).toEqual([
+      { slots: 4, firstOmittedStep: 5, mutedPicks: [{ step: 1, strings: [6] }] },
+      { slots: 6, firstOmittedStep: null, mutedPicks: [] },
+    ]);
+    expect(analyzePickingPattern(steps, 2, chords)[0]).toEqual({
+      slots: 8, firstOmittedStep: null, mutedPicks: [{ step: 1, strings: [6] }],
+    });
+    const grouped = parsePickingPattern('6+1 rest', standard).steps!;
+    expect(analyzePickingPattern(grouped, 1, chords)[0].mutedPicks).toEqual([{ step: 1, strings: [6] }]);
   });
 
   it('validates persisted patterns and limits malformed or excessive data', () => {

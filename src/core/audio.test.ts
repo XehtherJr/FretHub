@@ -23,6 +23,23 @@ describe('acoustic guitar sample bank', () => {
 describe('scheduled guitar sequences', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
 
+  it('recreates the audio context if the browser has closed it', async () => {
+    const param = () => ({ value: 0 });
+    class FakeAudioContext {
+      state = 'running'; destination = {};
+      createGain() { return { gain: param(), connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    const { getAudioContext } = await import('./audio');
+    const first = getAudioContext();
+    Object.defineProperty(first, 'state', { value: 'closed', configurable: true });
+    const second = getAudioContext();
+    expect(second).not.toBe(first);
+    expect(second.state).toBe('running');
+    expect(getAudioContext()).toBe(second);
+  });
+
   it('resolves a reference only after the sample has loaded and finished sounding', async () => {
     const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
     const source = { buffer: null, playbackRate: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn(), onended: null as (() => void) | null };
@@ -103,6 +120,35 @@ describe('scheduled guitar sequences', () => {
     started.length = 0;
     schedule([60, null, 64], 8, 1, { direction: 'up', gap: 0.02 });
     expect(started).toEqual([{ kind: 'fallback', when: 8 }, { kind: 'sample', when: 8.02 }]);
+  });
+
+  it('keeps very short sampled and fallback plucks within their requested duration', async () => {
+    const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn((_value: number, _time: number) => {}), exponentialRampToValueAtTime: vi.fn((_value: number, _time: number) => {}) });
+    const envelopes: ReturnType<typeof param>[] = [];
+    const sample = { buffer: null, playbackRate: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+    const synth = { type: '', frequency: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+    class FakeAudioContext {
+      currentTime = 5; state = 'running'; destination = {};
+      createGain() { const gain = param(); envelopes.push(gain); return { gain, connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+      createBufferSource() { return sample; }
+      createOscillator() { return synth; }
+      decodeAudioData() { return Promise.resolve({ duration: 3 }); }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/61.wav')
+      ? Promise.resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })
+      : Promise.reject(new Error('offline'))));
+    const { getAudioContext, prepareStrummer } = await import('./audio');
+    const schedule = await prepareStrummer(getAudioContext(), [60, 64]);
+    schedule([60, 64], 6, 0.005, { gap: 0 });
+    expect(sample.stop).toHaveBeenCalledWith(6.005);
+    expect(synth.stop).toHaveBeenCalledWith(6.005);
+    for (const envelope of envelopes.slice(1)) {
+      const ramps = [...envelope.linearRampToValueAtTime.mock.calls, ...envelope.exponentialRampToValueAtTime.mock.calls];
+      expect(ramps.length).toBeGreaterThan(0);
+      expect(ramps.every((call) => call[1] <= 6.005)).toBe(true);
+    }
   });
 
   it('stops an already-scheduled string if a later string cannot be created', async () => {

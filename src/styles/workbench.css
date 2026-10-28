@@ -136,6 +136,11 @@
 .progression-pattern-custom input[type='text'], .progression-pattern-custom input:not([type]) { width: 100%; max-width: 36rem; }
 .progression-pattern-custom .pattern-error { color: var(--text-dim); }
 .progression-pattern-custom [aria-invalid='true'] + p { color: var(--text); }
+.pattern-warning { margin-top: 0.65rem; padding-left: 0.7rem; border-left: 2px solid var(--brass); color: var(--text); font-size: 0.8rem; line-height: 1.5; }
+.progression-pattern-custom .pattern-warning p { margin: 0.25rem 0; }
+.pattern-warning ul { margin: 0.25rem 0; padding-left: 1.2rem; }
+.pattern-clear { margin-top: 0.5rem; }
+.pattern-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem 0.6rem; }
 .pattern-composer { margin-top: 0.6rem; }
 .pattern-composer summary { cursor: pointer; color: var(--brass-bright); font-size: 0.85rem; }
 .pattern-composer fieldset { margin: 0.75rem 0 0; padding: 0; border: 0; }

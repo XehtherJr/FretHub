@@ -14,6 +14,38 @@ export type PlaybackPattern =
 
 export const MAX_PATTERN_STEPS = 64;
 
+export interface PatternChordAnalysis {
+  /** Number of pattern slots before this chord changes. */
+  slots: number;
+  /** First one-based step which does not fit before this chord ends, if any. */
+  firstOmittedStep: number | null;
+  /** Reachable picked steps containing strings muted in this chord. */
+  mutedPicks: { step: number; strings: number[] }[];
+}
+
+/**
+ * Explain how a repeating, per-chord pattern fits actual chord durations and
+ * physical strings. String numbers in the result use the guitarist's 1-based
+ * treble-to-bass convention, even for alternate tunings and capo settings.
+ */
+export function analyzePickingPattern(
+  steps: PatternStep[],
+  stepsPerBeat: StepsPerBeat,
+  chords: { beats: number; frets: (number | null)[] }[],
+): PatternChordAnalysis[] {
+  return chords.map((chord) => {
+    const slots = chord.beats * stepsPerBeat;
+    const reachable = steps.slice(0, Math.min(slots, steps.length));
+    const mutedPicks = reachable.flatMap((step, index) => {
+      if (step.kind !== 'pick') return [];
+      const muted = step.strings.filter((stringIndex) => chord.frets[stringIndex] == null)
+        .map((stringIndex) => chord.frets.length - stringIndex);
+      return muted.length ? [{ step: index + 1, strings: muted }] : [];
+    });
+    return { slots, firstOmittedStep: slots < steps.length ? slots + 1 : null, mutedPicks };
+  });
+}
+
 /** Validate persisted data before it reaches playback or another device. */
 export function validPlaybackPattern(value: unknown, stringCount: number): value is PlaybackPattern {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
