@@ -1,6 +1,7 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Fretboard, { FretMarkerData, markerKey } from '@/components/Fretboard';
+import ProgressionBuilder from '@/components/ProgressionBuilder';
 import Icon from '@/components/Icon';
 import { TUNINGS, getTuning, applyCapo } from '@core/tunings';
 import { fretPc, generateVoicings } from '@core/voicing-engine';
@@ -28,7 +29,9 @@ export default function FretboardPage() {
   const [capo, setCapo] = useState(() => instrumentFromSearch(searchParams).capo);
   const [fretCount, setFretCount] = useState(12);
   const [preferFlats, setPreferFlats] = useState(false);
-  const [mode, setMode] = useState<'build' | 'scale'>('build');
+  const [mode, setMode] = useState<'build' | 'scale' | 'progression'>(() => searchParams.has('progression') || searchParams.get('mode') === 'progression' ? 'progression' : 'build');
+  const [progressionActionSlot, setProgressionActionSlot] = useState<HTMLSpanElement | null>(null);
+  const [progressionPickerSlot, setProgressionPickerSlot] = useState<HTMLDivElement | null>(null);
   const [soundOnClick, setSoundOnClick] = useState(true);
   const [showOptions, setShowOptions] = useState(false);
   const [selected, setSelected] = useState<Map<number, SelectedNote>>(new Map());
@@ -52,12 +55,15 @@ export default function FretboardPage() {
   // Voicings generated against a capoed tuning use fret numbers relative to the
   // capo. Translate them back to physical fret positions for the instrument.
   useEffect(() => {
+    // Saved progressions restore their own tuning, capo and selection.
+    if (searchParams.has('progression')) { setMode('progression'); return; }
     const instrument = instrumentFromSearch(searchParams);
     const requestedTuning = getTuning(instrument.tuning);
     setTuningId(instrument.tuning);
     setCapo(instrument.capo);
     setSelected(new Map());
     setLoadMessage(null);
+    if (searchParams.get('mode') === 'progression') setMode('progression');
     const chordParam = searchParams.get('chord');
     if (!chordParam) return;
     const [root, typeId] = chordParam.split('|');
@@ -91,7 +97,7 @@ export default function FretboardPage() {
         });
         setFretCount((current) => [12, 15, 22, 24].find((count) => count >= Math.max(current, highestFret)) ?? 24);
         setSelected(next);
-        setMode('build');
+        setMode(searchParams.get('mode') === 'progression' ? 'progression' : 'build');
       } else {
         setLoadMessage('No playable reference voicing was found for this chord, bass, tuning and capo. Try changing the instrument settings or select notes yourself.');
       }
@@ -106,7 +112,7 @@ export default function FretboardPage() {
   const selectedMidis = soundingNotes.map((note) => note.midi);
   const bass = [...soundingNotes].sort((a, b) => a.midi - b.midi)[0];
   const matches = useMemo(
-    () => mode === 'build' ? identifyChord(selectedPcs, bass?.pc, { assumedRoot: assumedRoot ?? undefined, midis: selectedMidis }) : [],
+    () => mode !== 'scale' ? identifyChord(selectedPcs, bass?.pc, { assumedRoot: mode === 'build' ? assumedRoot ?? undefined : undefined, midis: selectedMidis }) : [],
     // The MIDI values matter for voicing-specific names, even if the pitch classes stay the same.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mode, selectedPcs.join(','), selectedMidis.join(','), bass?.pc, assumedRoot],
@@ -142,7 +148,7 @@ export default function FretboardPage() {
   }, [mode, scaleRoot, displayScaleRoot, scaleNotes, showArpeggio, triadIntervals, tuning, capo, fretCount]);
 
   const buildMarkers = useMemo<FretMarkerData[]>(() => {
-    if (mode !== 'build') return [];
+    if (mode === 'scale') return [];
     const topRoot = matches[0]?.chord.rootPc;
     return [...selected.entries()].map(([stringIndex, note]) => ({
       stringIndex,
@@ -154,7 +160,7 @@ export default function FretboardPage() {
 
   const toggleNote = (stringIndex: number, fret: number, pc: number) => {
     setLoadMessage(null);
-    if (mode === 'build') {
+    if (mode !== 'scale') {
       setSelected((previous) => {
         const next = new Map(previous);
         const current = next.get(stringIndex);
@@ -184,6 +190,18 @@ export default function FretboardPage() {
     setSelected((previous) => new Map([...previous].filter(([, note]) => note.fret <= count)));
     setLastAudition(null);
   };
+  const loadProgressionShape = useCallback((frets: (number | null)[], nextTuningId: string, nextCapo: number) => {
+    const nextTuning = getTuning(nextTuningId);
+    const next = new Map<number, SelectedNote>();
+    let highest = 0;
+    frets.forEach((fret, index) => {
+      if (fret === null || !nextTuning.strings[index]) return;
+      highest = Math.max(highest, fret);
+      next.set(index, { fret, pc: fretPc(nextTuning, index, fret === 0 ? nextCapo : fret) });
+    });
+    setTuningId(nextTuningId); setCapo(nextCapo); setSelected(next); setLoadMessage(null);
+    setFretCount((current) => [12, 15, 22, 24].find((count) => count >= Math.max(current, highest)) ?? 24);
+  }, []);
   const selectedKeys = useMemo(() => new Set([...selected].map(([stringIndex, note]) => markerKey(stringIndex, note.fret))), [selected]);
 
   return (
@@ -200,16 +218,19 @@ export default function FretboardPage() {
       <div className="workbench">
         <div className="wb-mode-bar">
           <div className="wb-tabs" role="tablist" aria-label="Fretboard mode" onKeyDown={(event) => {
-            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            const modes = ['build', 'scale', 'progression'] as const;
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
-            const next = mode === 'build' ? 'scale' : 'build';
-            setMode(next);
-            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next === 'build' ? 0 : 1]?.focus();
+            const current = modes.indexOf(mode);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? modes.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + modes.length) % modes.length;
+            setMode(modes[next]);
+            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
           }}>
             <button type="button" role="tab" aria-controls="workbench-neck" aria-selected={mode === 'build'} tabIndex={mode === 'build' ? 0 : -1} onClick={() => setMode('build')}>Identify a chord</button>
             <button type="button" role="tab" aria-controls="workbench-neck" aria-selected={mode === 'scale'} tabIndex={mode === 'scale' ? 0 : -1} onClick={() => setMode('scale')}>Explore scales</button>
+            <button type="button" role="tab" aria-controls="workbench-neck" aria-selected={mode === 'progression'} tabIndex={mode === 'progression' ? 0 : -1} onClick={() => setMode('progression')}>Build a progression</button>
           </div>
-          <span className="wb-mode-hint">{mode === 'build' ? 'BUILD BY NOTE' : 'MAP THE NECK'}</span>
+          <span className="wb-mode-hint">{mode === 'build' ? 'BUILD BY NOTE' : mode === 'scale' ? 'MAP THE NECK' : 'ARRANGE & PLAY'}</span>
         </div>
 
         <div className="wb-controls">
@@ -274,12 +295,12 @@ export default function FretboardPage() {
           </div>
         )}
 
-        <div className="wb-neck-area" id="workbench-neck" role="tabpanel" aria-label={mode === 'build' ? 'Identify a chord' : 'Explore scales'}>
+        <div className="wb-neck-area" id="workbench-neck" role="tabpanel" aria-label={mode === 'build' ? 'Identify a chord' : mode === 'scale' ? 'Explore scales' : 'Build a progression'}>
           <div className="wb-neck-header">
             <div><span className="wb-section-kicker">THE NECK</span><span className="wb-neck-description">{tuning.name.split(' (')[0]} tuning <span> / </span> {tuning.strings.length} strings{capo ? ` / capo ${capo}` : ''}</span></div>
             <div className="wb-legend" aria-label="Fretboard legend">
-              <span><i className="legend-dot root" />{mode === 'build' ? 'Possible root' : 'Root'}</span>
-              <span><i className="legend-dot tone" />{mode === 'build' ? 'Selected note' : 'Scale tone'}</span>
+              <span><i className="legend-dot root" />{mode !== 'scale' ? 'Possible root' : 'Root'}</span>
+              <span><i className="legend-dot tone" />{mode !== 'scale' ? 'Selected note' : 'Scale tone'}</span>
               {mode === 'scale' && showArpeggio && <span><i className="legend-dot triad" />Triad</span>}
             </div>
           </div>
@@ -290,19 +311,30 @@ export default function FretboardPage() {
             interactive
             interaction={mode === 'scale' ? 'play' : 'select'}
             markers={mode === 'scale' ? scaleMarkers : buildMarkers}
-            selectedKeys={mode === 'build' ? selectedKeys : undefined}
+            selectedKeys={mode !== 'scale' ? selectedKeys : undefined}
             onToggle={toggleNote}
             preferFlats={preferFlats}
-            ariaLabel={mode === 'scale' ? `Fretboard showing ${displayScaleRoot} ${scaleType.name}` : 'Interactive guitar fretboard — select notes to identify chords'}
+            ariaLabel={mode === 'scale' ? `Fretboard showing ${displayScaleRoot} ${scaleType.name}` : mode === 'progression' ? 'Interactive guitar fretboard — select notes for your progression' : 'Interactive guitar fretboard — select notes to identify chords'}
           />
           <div className="wb-neck-footer">
-            <p>{mode === 'build' ? 'Select one note per string. Select it again to remove it. Arpeggiate plays selected strings one by one.' : 'Select any position to inspect or hear its note.'} <span>Use arrow keys to move; scroll to see higher frets.</span></p>
-            {mode === 'build' && <div className="wb-board-actions">
+            <p>{mode !== 'scale' ? 'Select one note per string. Select it again to remove it. Arpeggiate plays selected strings one by one.' : 'Select any position to inspect or hear its note.'} <span>Use arrow keys to move; scroll to see higher frets.</span></p>
+            {mode !== 'scale' && <div className="wb-board-actions">
               <button type="button" className="btn btn-ghost btn-sm" onClick={clearBoard} disabled={selected.size === 0}>Clear</button>
               <button type="button" className="btn btn-primary btn-sm" onClick={playSelection} disabled={selected.size === 0 || !audioAvailable}><Icon name="play" /> Strum selection</button>
               <button type="button" className="btn btn-sm" onClick={arpeggiateSelection} disabled={selected.size === 0 || !audioAvailable} title={`Play selected strings one at a time, from string ${tuning.strings.length} toward string 1`}><Icon name="play" /> Arpeggiate selection</button>
+              {mode === 'progression' && <span ref={setProgressionActionSlot} className="wb-progression-actions" />}
             </div>}
+            {mode === 'progression' && <div className="wb-progression-picker-slot" ref={setProgressionPickerSlot} />}
           </div>
+        </div>
+        <div hidden={mode !== 'progression'}>
+          <ProgressionBuilder
+            active={mode === 'progression'} tuningId={tuningId} capo={capo}
+            selectedFrets={tuning.strings.map((_, index) => selected.get(index)?.fret ?? null)}
+            matches={matches} preferFlats={preferFlats} requestedId={searchParams.get('progression')}
+            actionSlot={progressionActionSlot} pickerSlot={progressionPickerSlot}
+            onLoadShape={loadProgressionShape}
+          />
         </div>
       </div>
 
@@ -374,7 +406,7 @@ export default function FretboardPage() {
             </div>
           </section>
         </div>
-      ) : (
+      ) : mode === 'scale' ? (
         <div className="wb-results wb-scale-results">
           <section className="wb-selection">
             <div className="wb-result-heading"><div><p className="wb-section-kicker">INTERVALS</p><h2>Scale tones</h2></div></div>
@@ -388,7 +420,7 @@ export default function FretboardPage() {
             <div className="row"><Link className="text-link" to={scalePath(scaleId, displayScaleRoot)}>Open in scale library <Icon name="arrow" /></Link>{qualityForTriadIntervals(triadIntervals) && <Link className="text-link" to={triadStudyPath(displayScaleRoot, qualityForTriadIntervals(triadIntervals), scaleId, { tuning: tuningId, capo, frets: fretCount })}>Study its root triad <Icon name="arrow" /></Link>}</div>
           </section>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

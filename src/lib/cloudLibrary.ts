@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { applyLibrarySnapshot, emptySnapshot, getLibrarySnapshot, mergeLibrarySnapshots, normalizeSnapshot, type LibrarySnapshot } from '@core/storage';
+import { applyLibrarySnapshot, canonicalJson, emptySnapshot, getLibrarySnapshot, mergeLibrarySnapshots, normalizeSnapshot, type LibrarySnapshot } from '@core/storage';
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -11,10 +11,7 @@ export const cloudClient: SupabaseClient | null = (() => {
   catch { return null; }
 })();
 
-function canonical(snapshot: LibrarySnapshot): string {
-  const sort = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)));
-  return JSON.stringify({ version: 1, favorites: sort(snapshot.favorites), notes: sort(snapshot.notes), lessons: sort(snapshot.lessons) });
-}
+function canonical(snapshot: LibrarySnapshot): string { return canonicalJson(snapshot); }
 
 /**
  * Merge local edits with the cloud row using revision-checked updates. A
@@ -27,12 +24,21 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
       .select('data, revision').eq('user_id', userId).maybeSingle();
     if (readError) throw readError;
     if (!isCurrent()) return { dirty: false };
-    if (row && (!row.data || typeof row.data !== 'object' || row.data.version !== 1)) {
+    if (row && (!row.data || typeof row.data !== 'object' || ![1, 2].includes(row.data.version))) {
       throw new Error('This library was saved in an unsupported format. It was not changed.');
     }
     const remote = row ? normalizeSnapshot(row.data) : emptySnapshot();
+    // Never replace a v2 cloud row after silently discarding an unfamiliar or
+    // damaged progression. A newer app or a repair may still recover it.
+    if (row?.data.version === 2) {
+      const progressions: unknown = row.data.progressions;
+      if (!progressions || typeof progressions !== 'object' || Array.isArray(progressions)
+        || Object.keys(progressions).length !== Object.keys(remote.progressions).length) {
+        throw new Error('This library contains unsupported progression data. It was not changed.');
+      }
+    }
     const merged = mergeLibrarySnapshots(remote, getLibrarySnapshot());
-    if (!row || canonical(merged) !== canonical(remote)) {
+    if (!row || row.data.version !== 2 || canonical(merged) !== canonical(remote)) {
       if (!isCurrent()) return { dirty: false };
       if (!row) {
         const { error } = await client.from('user_libraries').insert({ user_id: userId, data: merged, revision: 1 });
@@ -50,7 +56,7 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
     // Keep edits made while the network request was in flight, and send them
     // on the next pass rather than overwriting them with the older response.
     const latest = mergeLibrarySnapshots(merged, getLibrarySnapshot());
-    applyLibrarySnapshot(latest);
+    if (!applyLibrarySnapshot(latest)) throw new Error('Could not save the synced library on this device. Check browser storage and try again.');
     return { dirty: canonical(latest) !== canonical(merged) };
   }
   throw new Error('Your library changed on another device. Please try syncing again.');

@@ -161,6 +161,32 @@ export function strum(midiNotes: (number | null)[], direction: 'down' | 'up' = '
   playSequence(direction === 'down' ? notes : [...notes].reverse(), gap, 2.8, 0.85);
 }
 
+export type PreparedStrummer = (notes: (number | null)[], when: number, duration: number) => AudioScheduledSourceNode[];
+
+/** Decode each needed recording once before scheduling a cancellable progression. */
+export async function prepareStrummer(audio: AudioContext, midiNotes: number[]): Promise<PreparedStrummer> {
+  const entries = await Promise.all([...new Set(midiNotes)].map(async (midi) => {
+    const pitch = nearestSamplePitch(midi);
+    const buffer = await loadSample(audio, pitch).catch(() => null);
+    return [midi, { pitch, buffer }] as const;
+  }));
+  const prepared = new Map(entries);
+  return (notes, when, duration) => {
+    const sources: AudioScheduledSourceNode[] = [];
+    try {
+      notes.filter((midi): midi is number => midi !== null).forEach((midi, index) => {
+        const sample = prepared.get(midi);
+        const options = { when: when + index * 0.035, duration, velocity: 0.85 };
+        sources.push(sample?.buffer ? playSample(audio, sample.buffer, sample.pitch, midi, options) : playSynth(audio, midi, options));
+      });
+    } catch (error) {
+      sources.forEach((source) => { try { source.stop(); } catch { /* Already ended. */ } });
+      throw error;
+    }
+    return sources;
+  };
+}
+
 /** Schedule a short metronome click against the audio clock. */
 export function playClick(accent: boolean | 'group' = false, when?: number): OscillatorNode {
   const audio = getAudioContext();

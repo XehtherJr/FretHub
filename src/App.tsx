@@ -14,13 +14,18 @@ import PracticePage from './pages/PracticePage';
 import TunerPage from './pages/TunerPage';
 import MetronomePage from './pages/MetronomePage';
 import LibraryPage from './pages/LibraryPage';
+import AccountRecoveryPage from './pages/AccountRecoveryPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 function ScrollToTop() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
+    // Account links also work when the visitor is already on the library page.
+    const target = hash ? document.getElementById(hash.slice(1)) : null;
+    if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'start' });
+    else window.scrollTo(0, 0);
+  }, [pathname, hash]);
   return null;
 }
 
@@ -44,6 +49,8 @@ export default function App() {
           <Route path="tuner" element={<TunerPage />} />
           <Route path="metronome" element={<MetronomePage />} />
           <Route path="library" element={<LibraryPage />} />
+          <Route path="account/reset" element={<AccountRecoveryPage />} />
+          <Route path="account/verify" element={<VerifyEmailPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
