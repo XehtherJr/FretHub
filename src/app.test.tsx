@@ -40,6 +40,20 @@ describe('application routing and rendering', () => {
     expect(screen.getAllByRole('img', { name: /fret positions/ }).length).toBeGreaterThan(0);
   });
 
+  it('makes account access visible and scrolls to it from the header, including on the library page', () => {
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      renderAt('/library');
+      const signIn = screen.getByRole('link', { name: /^Sign in$/ });
+      expect(signIn).toHaveAttribute('href', '/library#account');
+      fireEvent.click(signIn);
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+      expect(screen.getByLabelText('Optional account and sync')).toHaveAttribute('id', 'account');
+    } finally { HTMLElement.prototype.scrollIntoView = original; }
+  });
+
   it('renders the chord encyclopedia browser and filters by root', () => {
     renderAt('/chords');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('C chords');

@@ -96,3 +96,51 @@
   .wb-neck-footer p span { display: block; margin-top: 0.2rem; }
   .wb-match { grid-template-columns: minmax(65px, 0.8fr) minmax(0, 1.2fr) auto 15px; gap: 0.5rem; }
 }
+
+/* Progressions: one editable sequence, using the same workbench vocabulary. */
+.progression-builder { padding: 0.25rem 1.35rem 1.35rem; border-top: 1px solid var(--line); }
+.wb-board-actions, .wb-progression-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.wb-progression-picker-slot { flex: 1 0 100%; min-width: 0; }
+.progression-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem 1rem; }
+.progression-heading h2 { margin: 0.35rem 0 0; font-size: 1.2rem; }
+.progression-heading h3 { margin: 0; font-size: 1rem; }
+.progression-builder > p { max-width: 78ch; }
+.progression-sequence, .progression-saved { padding: 1rem 0; border-bottom: 1px solid var(--line-soft); }
+.progression-chord-entry, .progression-picker, .progression-settings, .progression-save-row { display: flex; flex-wrap: wrap; align-items: end; gap: 0.7rem; }
+.progression-chord-entry .field { flex: 1 1 180px; max-width: 320px; }
+.progression-picker { margin-top: 0.65rem; }
+.progression-picker[hidden] { display: none; }
+.progression-picker .field:first-child { width: 110px; }
+.progression-picker .field:nth-child(2) { width: min(100%, 300px); }
+.progression-add > p { margin: 0.55rem 0 0; }
+.progression-setup-warning { margin-top: 0.65rem; }
+.progression-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.7rem; margin-top: 0.45rem; }
+.progression-steps, .progression-saved-list { list-style: none; padding: 0; margin: 0.7rem 0 0; }
+.progression-steps li, .progression-saved-list li { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; padding: 0.7rem 0; border-top: 1px solid var(--line-soft); }
+.progression-steps li.is-playing { background: #d9ad6712; box-shadow: inset 3px 0 var(--brass); padding-left: 0.45rem; }
+.progression-index { min-width: 1.5rem; color: var(--text-faint); font: 0.75rem var(--font-mono); }
+.progression-step-name { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; }
+.progression-step-name strong, .progression-saved-list strong { color: var(--brass-bright); }
+.progression-step-name small, .progression-saved-list small { display: block; color: var(--text-dim); font: 0.73rem var(--font-mono); }
+.progression-beats { width: 68px; }
+.progression-step-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.progression-settings, .progression-save-row { padding-top: 1rem; }
+.progression-settings .field { width: 180px; }
+.progression-settings small { display: block; margin-top: 0.25rem; color: var(--text-dim); font-size: 0.72rem; }
+.progression-loop { display: inline-flex; align-items: center; gap: 0.45rem; min-height: 40px; margin: 0 0.4rem 0 0; }
+.progression-loop input { width: auto; }
+.progression-play-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.progression-saved-list li { justify-content: space-between; }
+.save-progression-dialog { width: min(32rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); padding: 1.5rem; color: var(--text); background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.save-progression-dialog::backdrop { background: #000a; }
+.save-progression-dialog form { display: grid; gap: 0.9rem; }
+.save-progression-dialog h2, .save-progression-dialog p { margin: 0; }
+.save-progression-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; }
+.progression-saved-list .row { flex-wrap: wrap; }
+@media (max-width: 540px) {
+  .wb-tabs { gap: 0.9rem; }
+  .wb-tabs button { font-size: 0.78rem; line-height: 1.25; padding: 0.7rem 0; }
+  .progression-builder { padding-left: 0.8rem; padding-right: 0.8rem; }
+  .progression-chord-entry .field { flex-basis: 100%; max-width: none; }
+  .progression-step-actions { width: 100%; }
+}

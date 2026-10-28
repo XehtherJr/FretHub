@@ -3,6 +3,7 @@ import { NavLink, Outlet, Link, useLocation } from 'react-router-dom';
 import SearchModal from './SearchModal';
 import ToastHost from './Toast';
 import Icon from './Icon';
+import { useLibrarySync } from '@/hooks/LibrarySync';
 
 const NAV = [
   { to: '/fretboard', label: 'Fretboard' },
@@ -19,6 +20,7 @@ export default function Layout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const { session } = useLibrarySync();
 
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function Layout() {
               <Icon name="search" /><span className="search-trigger-text">Search</span><kbd aria-hidden="true">⌘ K</kbd>
             </button>
             <NavLink to="/library" className={({ isActive }) => `library-link ${isActive ? 'active' : ''}`}>Library</NavLink>
+            <Link to="/library#account" className="account-link" onClick={() => { if (location.pathname === '/library') document.getElementById('account')?.scrollIntoView?.({ block: 'start' }); }}>{session ? 'Account' : 'Sign in'}</Link>
             <button type="button" className="mobile-menu-button" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)}>
               <Icon name={menuOpen ? 'close' : 'menu'} />
             </button>

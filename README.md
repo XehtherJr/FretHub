@@ -8,7 +8,7 @@ to browse, play sounds, practise, or save a library on the current device.
 
 | Area | Features |
 | --- | --- |
-| Fretboard | Equal-tempered physical fret geometry, 6/7/8-string tunings, capo, keyboard navigation, note selection, strum or arpeggiate selected strings, chord identification, scale and root-triad overlays. |
+| Fretboard | Equal-tempered physical fret geometry, 6/7/8-string tunings, capo, keyboard navigation, note selection, strum or arpeggiate selected strings, chord identification, scale overlays and a custom progression builder. |
 | Chords | 54 chord/voicing definitions × 12 roots = 648 calculated entries, including suspended extensions and altered dominants. Search by name, symbol, notes or formula; generated voicings, fingering, barres and inversions. |
 | Sound | Locally hosted steel-string acoustic guitar recordings with pitch-corrected samples, strumming and a synthesized fallback if a sample cannot load. |
 | Theory | 15 ordered lessons with interactive labs, glossary and optional saved checks. The connected triad study follows a chord from its notes through the neck, inversions, scales, application and a two-key challenge. |
@@ -16,7 +16,7 @@ to browse, play sounds, practise, or save a library on the current device.
 | Tuner | A local microphone tuner with automatic open-string targets, optional chromatic mode, selectable reference notes, 13 tunings and real-time pitch feedback. |
 | Metronome | An audio-clock metronome with steady, timing-coach and disappearing-click modes; tap tempo, quarter- and eighth-note meters, group accents and optional device-latency calibration. |
 | Practice | Chord and note quizzes, with local scores and streaks. The tuner and metronome are also accessible from Practice for existing users. |
-| Library | Favorites, chord notes, recent chords and lesson progress work locally. An optional passwordless account can sync favorites, notes and lesson challenges when a deployment configures the cloud service. |
+| Library | Favorites, chord notes, custom progressions, recent chords and lesson progress work locally. An optional email/password account can sync favorites, notes, saved progressions and lesson challenges when a deployment configures the cloud service. |
 
 ## Getting started
 
@@ -36,33 +36,92 @@ secure context (HTTPS or localhost), Web Audio and a microphone permission grant
 microphone audio in the browser; no recording or microphone audio is uploaded. The timing coach
 works best with headphones, one clear attack per beat, and calibration for device latency.
 
+### Custom progressions
+
+Open **Build a progression** on the fretboard. Select notes directly, or type a chord (for example
+`Am7` or `Bbmaj7/D`) or choose its root and type, then show a suggested voicing on the neck. Add it
+beside the arpeggiate button and repeat in any order. A recognized chord name must be shown first,
+unless you explicitly use it as a label for your current frets. You can edit the selected shape,
+reorder or remove chords, choose how many quarter-note beats each lasts, change tempo, and loop
+playback. **Save progression** opens a dialog for the name and difficulty. Playback makes one sampled
+downstroke per chord, not a complete strumming pattern.
+
+A saved progression retains the exact frets and muted/open strings, tuning and capo, not just chord
+names. Load it from the builder or Library; loading restores its instrument setup. Every progression
+has a beginner, novice, intermediate or advanced label. Automatic labels are **rough estimates**
+based on span, likely fingering, position changes, chord duration and tempo; they do not judge
+musical difficulty. Choose a label manually if it fits better. Suggested voicings and automatic
+grades are heuristics and do not guarantee that a shape is comfortable for every player.
+
 ### Optional cross-device library sync
 
-Cross-device sync is implemented with Supabase Auth and a row-level-secured Postgres table. It is
-**not enabled automatically**: an operator must configure a Supabase project for the deployment.
-Without that configuration, the site displays an honest guest-only state and all local features
-continue working. Do not put service-role keys or other secrets in a browser build.
+Everything remains usable without signing in. Sync uses Supabase Auth and a row-level-secured
+Postgres table; each deployment must provide its own configuration. Without it, the app clearly
+remains guest-only. No service-role key or other secret belongs in a browser build.
 
-1. Create a Supabase project and enable email magic-link authentication. Run
-   [`supabase/schema.sql`](supabase/schema.sql) in its SQL editor. The table's row-level security
-   permits authenticated users to read, insert and update **only their own** library row.
-2. In Supabase Authentication URL Configuration, set the site URL and allow the deployed
-   `/library` redirect URL (also add the preview URL when needed).
-3. Copy `.env.example` to `.env.local` for local development, or set the variables in your host's
-   build settings. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the project's **public**
-   URL and publishable/anon key. Restart the dev server or rebuild the deployment. Never use the
-   secret/service-role key here.
-4. In Library, request an email link and open it in the **same browser** that requested it. Repeat
-   on another device to access the same account. Authentication emails and delivery are provided by
-   the configured Supabase project; production projects should configure appropriate email delivery.
+1. In the Supabase project, enable email/password sign-in and signups, and **disable email
+   confirmation** for this immediate-signup flow. Run [`supabase/schema.sql`](supabase/schema.sql)
+   in the SQL editor; the library table's RLS permits authenticated users to read, insert and update
+   only their own row. The idempotent schema also installs the optional email-verification functions
+   and updates the default to snapshot version 2 without replacing existing rows.
+2. Copy `.env.example` to `.env.local` for local development. Set `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_ANON_KEY` to the project's **public project URL and publishable (or legacy anon)
+   key**. Restart the dev server. Keep `.env.local` out of Git and never use a secret/service-role key.
+3. For Netlify, set the same two variables in the site's environment/build settings for the intended
+   deploy contexts and redeploy. Other static hosts need equivalent build-time variables: Vite embeds
+   them when building, so local `.env.local` alone does not configure a deployed site.
+4. For **email links, optional verification and password reset**, set the real deployed origin as
+   Supabase Auth's Site URL and allow that origin's `/library`, `/account/verify`, and `/account/reset`
+   redirect URLs. Add only the development/preview origins you actually use. Configure suitable
+   production SMTP and email templates; Supabase's default mail service is restricted and rate-limited.
+   The static host must serve `index.html` for all three routes. The app uses PKCE, so links must be
+   opened in the **same browser and site origin** where they were requested.
+5. Use the **Sign in** link in the header or open Library, choose **Create account**, and enter an
+   email and password of at least eight characters. Sign in with the same credentials on another
+   device. No confirmation email is needed to start using the account. In the signed-in account area,
+   **Verify email (optional)** sends a link; **Forgot password?** sends a password-reset link.
+   Optional email-link sign-in remains available, including for accounts without passwords.
 
-On first sign-in, the current device's favorites, chord notes and completed lesson challenges are
-merged into the account. Per-item timestamps and deletion markers preserve removals; revision-checked
-writes retry if two devices update concurrently. Changes sync after local edits, when the page is
-focused or reconnected, and via **Sync now**. Notes changed on two devices use the most recent
-per-item timestamp, so device clocks should be reasonably accurate. Recently viewed chords and
-practice quiz totals remain local. Signing out leaves a local copy on that browser; clear site data
-on shared devices if needed. Clearing local data before it has synced removes the local copy.
+**Security and recovery:** auto-confirmation is not proof of mailbox access: anyone can register an
+address they do not control, potentially preventing its real owner from using it. The optional badge
+is recorded by a server function only after a fresh signed PKCE email-link/recovery session and is
+invalidated if the Auth email changes. It means mailbox access was demonstrated at that time, not
+exclusive account ownership. It does not prevent fraudulent registrations. Password recovery and
+verification require a reachable mailbox, approved redirect URLs and working email delivery; the
+app cannot make those guarantees on an unconfigured deployment. Avoid using the library for sensitive
+information, use a unique password, protect shared devices, and configure appropriate abuse controls.
+The rollback-only [`supabase/tests/optional_email_verification.sql`](supabase/tests/optional_email_verification.sql)
+checks the server proof rules on a test database without sending mail.
+
+The first account used on a device adopts its guest library. Later account switches keep separate
+local library copies; signing out leaves the last copy available locally, and signing into that same
+account merges any subsequent guest edits. Favorites, notes, lesson challenges and progressions use
+per-item timestamps and deletion markers; revision-checked writes retry concurrent changes. Changes
+sync after edits, on focus/reconnection, or with **Sync now**. If the same item changes on multiple
+devices, the latest item timestamp wins, so device clocks should be reasonably accurate. Recent
+chords and practice quiz totals stay on the device rather than syncing. Clearing site data removes
+local copies, including changes that have not synced; do so on shared devices after signing out if
+privacy matters. Sync is not a backup. Older app versions cannot safely read version-2 progression
+snapshots and must be updated rather than allowed to overwrite them.
+
+#### Configure production email
+
+Supabase's default email service only sends to addresses on the project's team; it is not a
+production mail service. To send verification and password-reset links to other users:
+
+1. Choose a transactional email provider that supports SMTP and verify a sender address/domain with
+   that provider. Obtain its SMTP host, port, username and password. Use the port and TLS settings
+   recommended by the provider.
+2. In the Supabase dashboard, open the project’s **Authentication → SMTP Settings**, enable custom
+   SMTP, and enter the sender address/name and provider settings there. Keep SMTP credentials out of
+   the repository, frontend environment variables and chat. See the
+   [Supabase custom SMTP guide](https://supabase.com/docs/guides/auth/auth-smtp).
+3. Leave email confirmation disabled if immediate signup without verification is desired. Confirm
+   the Site URL and the three redirect URLs listed above point to the deployed app, and review the
+   Auth email rate limit for the provider's plan.
+4. After deploying this app, request a reset link and an optional verification link for a mailbox you
+   control. Open each link in the same browser and origin that requested it, and verify delivery and
+   the resulting account screen. Browser-only and mocked tests cannot verify real email delivery.
 
 ## Architecture
 
@@ -72,6 +131,7 @@ src/
 │   ├── notes.ts, intervals.ts, chords.ts, chord-definitions.ts
 │   ├── tunings.ts, voicing-engine.ts, chord-identifier.ts
 │   ├── scales.ts, progressions.ts, triadRelationships.ts, audio.ts
+│   ├── userProgressions.ts, progressionAudio.ts # saved shapes, grading and playback
 │   ├── pitchDetection.ts, pitchTracker.ts, tuner.ts  # pitch and tuning guidance
 │   ├── rhythm.ts            # beat offsets, timing feedback, silent-bar logic
 │   └── storage.ts           # local library and timestamped sync snapshots
@@ -82,7 +142,7 @@ src/
 └── pages/                   # routed product areas
 public/audio/guitar/         # CC0 acoustic guitar recordings, with attribution
 public/audio/onset-detector.js # local-only AudioWorklet transient detector
-supabase/schema.sql          # optional account table and row-level policies
+supabase/schema.sql          # optional account tables, policies and email-proof functions
 ```
 
 The voicing engine searches string/fret combinations, prunes unplayable spans, supports open and
@@ -144,8 +204,10 @@ specified for compatible builds. A Supabase project is only needed for the optio
   judge the musicality of a performance. Background-tab throttling can affect metronome scheduling.
 - The first sample playback may take a moment on a slow connection. A synthesized fallback keeps
   playback available if a sample is unavailable; reduced-data settings skip automatic prefetching.
-- Cloud sync requires a configured project and working email delivery. It is not a substitute for a
-  backup, and the local browser can retain signed-out data.
+- Cloud sync requires a configured project, build-time public configuration and network access. It
+  is not a substitute for a backup, and the local browser can retain signed-out data. Optional
+  email links and recovery need configured redirects and email delivery; immediate signup has the
+  ownership risks described above.
 
 ## License
 

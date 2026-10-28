@@ -74,6 +74,51 @@ describe('scheduled guitar sequences', () => {
     expect(finished).toBe(true);
   });
 
+  it('prepares progression samples once and returns cancellable sources in string order', async () => {
+    const started: { kind: string; when: number }[] = [];
+    const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+    class FakeAudioContext {
+      currentTime = 5; state = 'running'; destination = {};
+      createGain() { return { gain: param(), connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+      createBufferSource() { return { buffer: null, playbackRate: param(), connect: vi.fn(), start: (when: number) => started.push({ kind: 'sample', when }), stop: vi.fn() }; }
+      createOscillator() { return { type: '', frequency: param(), connect: vi.fn(), start: (when: number) => started.push({ kind: 'fallback', when }), stop: vi.fn() }; }
+      decodeAudioData() { return Promise.resolve({ duration: 3 }); }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    const fetcher = vi.fn((url: string) => url.endsWith('/61.wav')
+      ? Promise.resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })
+      : Promise.reject(new Error('sample unavailable')));
+    vi.stubGlobal('fetch', fetcher);
+    const { getAudioContext, prepareStrummer } = await import('./audio');
+    const schedule = await prepareStrummer(getAudioContext(), [60, 64, 60]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const sources = schedule([60, null, 64], 6, 1);
+    expect(started).toEqual([{ kind: 'sample', when: 6 }, { kind: 'fallback', when: 6.035 }]);
+    expect(sources).toHaveLength(2);
+    expect(sources.every((source) => typeof source.stop === 'function')).toBe(true);
+  });
+
+  it('stops an already-scheduled string if a later string cannot be created', async () => {
+    const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
+    const first = { buffer: null, playbackRate: param(), connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+    let count = 0;
+    class FakeAudioContext {
+      currentTime = 5; state = 'running'; destination = {};
+      createGain() { return { gain: param(), connect: vi.fn() }; }
+      createDynamicsCompressor() { return { threshold: param(), knee: param(), ratio: param(), attack: param(), release: param(), connect: vi.fn() }; }
+      createBufferSource() { if (++count === 2) throw new Error('audio closed'); return first; }
+      decodeAudioData() { return Promise.resolve({ duration: 3 }); }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }));
+    const { getAudioContext, prepareStrummer } = await import('./audio');
+    const schedule = await prepareStrummer(getAudioContext(), [60, 64]);
+    expect(() => schedule([60, 64], 6, 1)).toThrow('audio closed');
+    expect(first.stop).toHaveBeenCalledTimes(2); // Original scheduled end, then immediate cancellation.
+    expect(first.stop).toHaveBeenLastCalledWith();
+  });
+
   it('waits for slow samples and schedules a failed sample as a synth in the right order', async () => {
     const started: { kind: string; when: number }[] = [];
     const param = () => ({ value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() });
