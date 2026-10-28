@@ -1,4 +1,5 @@
 /** A conventional vertical chord chart, drawn from an engine-generated voicing. */
+import { useId } from 'react';
 import { Voicing, fretPc } from '@core/voicing-engine';
 import { Tuning } from '@core/tunings';
 import { pcToNote } from '@core/notes';
@@ -16,6 +17,8 @@ export default function ChordDiagram({
   voicing, tuning, name, showNotes = true, rootPc, compact,
 }: ChordDiagramProps) {
   const { frets, fingers, barre } = voicing;
+  const barres = voicing.barres ?? (barre ? [barre] : []);
+  const descriptionId = useId();
   const fretted = frets.filter((f): f is number => f !== null && f > 0);
   const position = fretted.length ? Math.min(...fretted) : 0;
   const startFret = position <= 1 ? 1 : position;
@@ -31,13 +34,22 @@ export default function ChordDiagram({
   const width = right + 30;
   const height = bottom + (showNotes && !compact ? 25 : 6);
   const tabLabel = frets.map((f) => f === null ? 'x' : String(f)).join(' ');
+  const fingeringDescription = frets.map((fret, index) => {
+    const string = `string ${stringCount - index}`;
+    if (fret === null) return `${string} muted`;
+    if (fret === 0) return `${string} open`;
+    return `${string}, fret ${fret}, finger ${fingers[index]}`;
+  }).join('; ');
+  const barreDescription = barres.map((item) => `Finger ${fingers[item.stringFrom]} barres fret ${item.fret} from string ${stringCount - item.stringFrom} through string ${stringCount - item.stringTo}`).join('; ');
 
   return (
     <figure
       className={`chord-diagram ${compact ? 'is-compact' : ''}`}
       role="img"
       aria-label={`${name ? `${name}, ` : ''}fret positions low to high: ${tabLabel}`}
+      aria-describedby={descriptionId}
     >
+      <span id={descriptionId} className="sr-only">Suggested fingering: {fingeringDescription}. {barreDescription && `${barreDescription}. `}Finger numbers are estimates.</span>
       <svg className="cd-illustration" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
         {frets.map((fret, index) => (
           <text key={index} x={left + index * stringGap} y="19" textAnchor="middle" className={`cd-open-marker ${fret === 0 && rootPc !== undefined && fretPc(tuning, index, 0) === rootPc ? 'root' : ''}`}>
@@ -51,22 +63,22 @@ export default function ChordDiagram({
         {Array.from({ length: rows + 1 }, (_, row) => (
           <line key={row} x1={left} x2={right} y1={top + row * fretGap} y2={top + row * fretGap} className={row === 0 && startFret === 1 ? 'cd-nut' : 'cd-fret'} />
         ))}
-        {barre && (
-          <g className="cd-barre">
+        {barres.map((item) => (
+          <g className="cd-barre" key={`${item.fret}:${item.stringFrom}:${item.stringTo}`}>
             <rect
-              x={left + barre.stringFrom * stringGap - 9}
-              y={top + (barre.fret - startFret + 0.5) * fretGap - 9}
-              width={(barre.stringTo - barre.stringFrom) * stringGap + 18}
+              x={left + item.stringFrom * stringGap - 9}
+              y={top + (item.fret - startFret + 0.5) * fretGap - 9}
+              width={(item.stringTo - item.stringFrom) * stringGap + 18}
               height="18"
               rx="9"
             />
-            <text x={right + 12} y={top + (barre.fret - startFret + 0.5) * fretGap + 3.5} textAnchor="middle">1</text>
+            <text x={left + (item.stringFrom + item.stringTo) * stringGap / 2} y={top + (item.fret - startFret + 0.5) * fretGap + 3.5} textAnchor="middle">{fingers[item.stringFrom]}</text>
           </g>
-        )}
+        ))}
         {frets.map((fret, index) => {
           if (fret === null || fret === 0) return null;
           const isRoot = rootPc !== undefined && fretPc(tuning, index, fret) === rootPc;
-          const onBarre = barre && fret === barre.fret && index >= barre.stringFrom && index <= barre.stringTo;
+          const onBarre = barres.some((item) => fret === item.fret && index >= item.stringFrom && index <= item.stringTo);
           if (onBarre && !isRoot) return null;
           const finger = fingers[index];
           return (

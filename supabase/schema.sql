@@ -1,12 +1,12 @@
 -- Run once in the Supabase SQL editor. No service-role key is used in FretHub.
 create table if not exists public.user_libraries (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  data jsonb not null default '{"version":2,"favorites":{},"notes":{},"lessons":{},"progressions":{}}'::jsonb,
+  data jsonb not null default '{"version":3,"favorites":{},"notes":{},"lessons":{},"progressions":{}}'::jsonb,
   revision bigint not null default 1 check (revision > 0),
   updated_at timestamptz not null default now()
 );
 
-alter table public.user_libraries alter column data set default '{"version":2,"favorites":{},"notes":{},"lessons":{},"progressions":{}}'::jsonb;
+alter table public.user_libraries alter column data set default '{"version":3,"favorites":{},"notes":{},"lessons":{},"progressions":{}}'::jsonb;
 alter table public.user_libraries enable row level security;
 revoke all on public.user_libraries from anon, authenticated;
 grant select, insert, update on public.user_libraries to authenticated;

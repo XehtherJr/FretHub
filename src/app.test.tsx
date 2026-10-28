@@ -77,10 +77,100 @@ describe('application routing and rendering', () => {
     expect(screen.getAllByRole('button', { name: /Strum/ }).length).toBeGreaterThan(0);
   });
 
+  it('shows the complete Am9 x02413 on the default unfiltered chord page', () => {
+    renderAt('/chords/A/minor-9');
+    expect(screen.getByRole('img', { name: 'Am9, fret positions low to high: x 0 2 4 1 3' })).toBeInTheDocument();
+  });
+
+  it('shows the complete low-position Am9 and can reveal more generated shapes', () => {
+    renderAt('/chords/A/minor-9?bass=A');
+    expect(screen.getByRole('img', { name: 'Am9, fret positions low to high: x 0 2 4 1 3' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Sort voicings')).toHaveDisplayValue('Lowest fret position first');
+    const before = screen.getAllByRole('img', { name: /^Am9, fret positions/ }).length;
+    fireEvent.click(screen.getByRole('button', { name: 'Show more voicings' }));
+    expect(screen.getAllByRole('img', { name: /^Am9, fret positions/ }).length).toBeGreaterThan(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Show fewer voicings' }));
+    expect(screen.getAllByRole('img', { name: /^Am9, fret positions/ })).toHaveLength(before);
+  });
+
+  it('navigates past the old 500-shape cap and filters the fretted position and muted strings', () => {
+    renderAt('/chords/A/minor-9');
+    const page = screen.getByLabelText('Go to page');
+    expect(Number(page.getAttribute('max'))).toBeGreaterThan(32);
+    const first = screen.getAllByRole('img', { name: /fret positions low to high/ })[0].getAttribute('aria-label');
+    fireEvent.change(page, { target: { value: '33' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(screen.getByText(/Showing 513–528 of/)).toBeInTheDocument();
+    expect(screen.getByText(/Page 33 of/)).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: /fret positions low to high/ })[0]).not.toHaveAttribute('aria-label', first);
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByText(/Page 34 of/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    expect(screen.getByText(/Page 33 of/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Lowest fretted position'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Maximum muted strings'), { target: { value: '1' } });
+    const diagrams = screen.getAllByRole('img', { name: /fret positions low to high/ });
+    expect(diagrams.length).toBeGreaterThan(0);
+    for (const diagram of diagrams) {
+      const tokens = diagram.getAttribute('aria-label')!.split(': ')[1].split(' ');
+      expect(tokens.filter((token) => token === 'x').length).toBeLessThanOrEqual(1);
+      expect(tokens.every((token) => token === 'x' || Number(token) === 0 || Number(token) >= 7)).toBe(true);
+    }
+    expect(screen.getByText(/Showing 1–/)).toBeInTheDocument();
+  });
+
+  it('offers precise high-fret windows without exceeding the physical neck after a capo', () => {
+    renderAt('/chords/G/major');
+    fireEvent.change(screen.getByLabelText('Fret window'), { target: { value: '24' } });
+    fireEvent.change(screen.getByLabelText('Lowest fretted position'), { target: { value: '22' } });
+    const charts = screen.getAllByRole('img', { name: /^G(?:\/\w+)?, fret positions low to high:/ });
+    const frets = charts.flatMap((chart) => (chart.getAttribute('aria-label') ?? '').split(': ')[1].split(' '))
+      .filter((fret) => fret !== 'x').map(Number);
+    expect(frets.some((fret) => fret >= 22)).toBe(true);
+    expect(frets.every((fret) => fret === 0 || (fret >= 22 && fret <= 24))).toBe(true);
+    fireEvent.change(screen.getByLabelText('Capo'), { target: { value: '7' } });
+    expect(screen.getByLabelText('Fret window')).toHaveValue('17');
+    expect(screen.getByLabelText('Lowest fretted position')).toHaveValue('0');
+    expect(screen.getByRole('option', { name: 'Up to fret 18' })).toBeDisabled();
+    expect(screen.getByText(/highest fret choice stops at physical fret 24/i)).toBeInTheDocument();
+  }, 15000);
+
+  it('warns when a broad eight-string search is incomplete and clears the warning when narrowed', () => {
+    renderAt('/chords/C/dominant-alt?tuning=8-string-standard');
+    fireEvent.change(screen.getByLabelText('Fret window'), { target: { value: '18' } });
+    fireEvent.change(screen.getByLabelText('Max stretch'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Maximum muted strings'), { target: { value: '6' } });
+    expect(screen.getByText(/The search reached its safety limit and is incomplete/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing 1–16 of at least/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Lowest fretted position'), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Fret window'), { target: { value: '9' } });
+    expect(screen.queryByText(/The search reached its safety limit and is incomplete/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: /fret positions low to high/ }).length).toBeGreaterThan(0);
+  }, 15000);
+
+  it('shows the chosen 7alt alterations as alternatives rather than treating the others as missing', () => {
+    const { container } = renderAt('/chords/C/dominant-alt?bass=C');
+    expect(screen.getByText(/These are alternatives, not a requirement to play every alteration together/)).toBeInTheDocument();
+    const mapping: Record<string, number> = { b9: 1, '#9': 3, b5: 6, '#5': 8 };
+    const tuning = [40, 45, 50, 55, 59, 64];
+    const items = [...container.querySelectorAll('.voicing-item')];
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      const frets = item.querySelector('[role="img"]')!.getAttribute('aria-label')!.split(': ')[1].split(' ');
+      const pcs = new Set(frets.flatMap((fret, index) => fret === 'x' ? [] : [(tuning[index] + Number(fret)) % 12]));
+      const expected = Object.entries(mapping).filter(([, pc]) => pcs.has(pc)).map(([interval]) => interval);
+      const alteration = item.querySelector('[title^="Altered tones present:"]');
+      expect(expected.length).toBeGreaterThan(0);
+      expect(alteration?.textContent).toBe(`with ${expected.join(',')}`);
+      expect(item.querySelector('[title^="Omits "]')).toBeNull();
+    }
+  });
+
   it('labels each generated inversion by its actual, interval-spelled bass', () => {
     renderAt('/chords/C/minor');
     const bass = screen.getByLabelText('Bass note');
-    expect(bass).toHaveDisplayValue('Any bass (root preferred)');
+    expect(bass).toHaveDisplayValue('Any bass');
     expect(screen.getByText('Bass: varies')).toBeInTheDocument();
     expect(screen.getByText(/Finger numbers and playability labels are estimates/)).toBeInTheDocument();
     fireEvent.change(bass, { target: { value: '3' } });
@@ -151,6 +241,12 @@ describe('application routing and rendering', () => {
     fireEvent.click(within(board).getByRole('button', { name: /D2 string open, capo fret 2, note E2/ }));
     fireEvent.click(arpeggiate);
     expect(playSequence).toHaveBeenCalledWith([40, 53], 0.35, 1.4);
+    fireEvent.change(screen.getByLabelText('Arpeggio speed'), { target: { value: 'slow' } });
+    fireEvent.click(arpeggiate);
+    expect(playSequence).toHaveBeenLastCalledWith([40, 53], 0.6, 1.4);
+    fireEvent.change(screen.getByLabelText('Arpeggio speed'), { target: { value: 'fast' } });
+    fireEvent.click(arpeggiate);
+    expect(playSequence).toHaveBeenLastCalledWith([40, 53], 0.16, 1.4);
     fireEvent.click(screen.getByRole('button', { name: /^Clear$/ }));
     expect(arpeggiate).toBeDisabled();
   });
@@ -345,8 +441,10 @@ describe('application routing and rendering', () => {
     renderAt('/chords/C/major?tuning=drop-d&capo=7');
     expect(screen.getByLabelText('Tuning')).toHaveValue('drop-d');
     expect(screen.getByLabelText('Capo')).toHaveValue('7');
-    fireEvent.change(screen.getByLabelText('Fret window'), { target: { value: '18' } });
-    expect(screen.getByText(/Results stop at physical fret 24/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Fret window'), { target: { value: '17' } });
+    expect(screen.getByLabelText('Fret window')).toHaveValue('17');
+    expect(screen.getByRole('option', { name: 'Up to fret 18' })).toBeDisabled();
+    expect(screen.getByText(/highest fret choice stops at physical fret 24/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('link', { name: 'Open on fretboard' }));
     expect(screen.getByLabelText('Tuning')).toHaveValue('drop-d');
     expect(screen.getByLabelText('Capo')).toHaveValue('7');
@@ -356,10 +454,36 @@ describe('application routing and rendering', () => {
 
   it('explains when a requested reference voicing cannot be generated', () => {
     renderAt('/fretboard?chord=D%7Cso-what&bass=C');
-    expect(screen.getByText(/No playable reference voicing was found/)).toBeInTheDocument();
+    expect(screen.getByText(/No reference voicing was found within the current model and settings/)).toBeInTheDocument();
     const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
     fireEvent.click(within(board).getByRole('button', { name: /E2 string open, note E2/ }));
-    expect(screen.queryByText(/No playable reference voicing was found/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No reference voicing was found within the current model and settings/)).not.toBeInTheDocument();
+  });
+
+  it('shows a direct-link reference warning in progression mode and clears it when notes change', () => {
+    renderAt('/fretboard?mode=progression&chord=D%7Cso-what&bass=C');
+    expect(screen.getByRole('tab', { name: 'Build a progression' })).toHaveAttribute('aria-selected', 'true');
+    const message = screen.getByText(/No reference voicing was found within the current model and settings/);
+    expect(message).toBeVisible();
+    expect(message).toHaveAttribute('role', 'status');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /E2 string open, note E2/ }));
+    expect(screen.queryByText(/No reference voicing was found within the current model and settings/)).not.toBeInTheDocument();
+  });
+
+  it('explains an altered-chord family without labeling unchosen alterations as omissions', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const name of [/String 5, fret 3, note C3/, /String 4, fret 2, note E3/, /String 3, fret 3, note A#3/, /String 2, fret 2, note C#4/]) {
+      fireEvent.click(within(board).getByRole('button', { name }));
+    }
+    const showAll = screen.queryByRole('button', { name: /Show all \d+ matches/ });
+    if (showAll) fireEvent.click(showAll);
+    const family = screen.getByRole('link', { name: /C7alt/ });
+    expect(family).toHaveTextContent('Family match');
+    expect(family).toHaveTextContent('Played alterations: Db (b9)');
+    expect(family).not.toHaveTextContent('Not played:');
+    expect(family).toHaveAttribute('title', expect.stringContaining('alternatives, not required together'));
   });
 
   it('opens an extended chord on the fretboard without dropping its defining alteration', () => {
@@ -368,7 +492,7 @@ describe('application routing and rendering', () => {
     const names = [...selection.querySelectorAll('.note-chip')].map((chip) => chip.textContent);
     for (const required of ['C', 'E', 'A#']) expect(names).toContain(required);
     expect(names.some((name) => ['C#', 'D#', 'F#', 'G#'].includes(name ?? ''))).toBe(true);
-    expect(screen.getByRole('link', { name: /C7alt.*Partial/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /C7alt.*Family match/ })).toBeInTheDocument();
   });
 
   it('distinguishes octave doublings from different chord tones', () => {

@@ -10,6 +10,13 @@ import {
 import { intervalSemitones, getInterval, spellInterval } from './intervals';
 import { ChordType, CHORD_TYPES, getChordType } from './chord-definitions';
 
+/** Compare pitch-class sets, ignoring note order, register and duplicates. */
+export function samePitchClasses(first: readonly number[], second: readonly number[]): boolean {
+  const a = new Set(first.map(normalizePc));
+  const b = new Set(second.map(normalizePc));
+  return a.size === b.size && [...a].every((pc) => b.has(pc));
+}
+
 export interface ChordTone {
   /** Pitch class 0..11. */
   pc: number;

@@ -95,7 +95,7 @@ describe('local-first library', () => {
   });
   it('migrates old snapshots and rejects malformed progression data', () => {
     const old = normalizeSnapshot({ version: 1, favorites: { 'C|major': { value: true, modified: 5 } } });
-    expect(old.version).toBe(2);
+    expect(old.version).toBe(3);
     expect(old.favorites['C|major'].value).toBe(true);
     expect(old.progressions).toEqual({});
     const malformed = normalizeSnapshot({ ...old, progressions: { bad: { value: { ...progression, id: 'bad', capo: 40 }, modified: 10 } } });
@@ -210,9 +210,27 @@ describe('cloud sync', () => {
     const cloud = new FakeCloud();
     cloud.row = { data: { version: 1, favorites: { 'C|major': { value: true, modified: 2 } }, notes: {}, lessons: {} } as unknown as LibrarySnapshot, revision: 1 };
     await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
-    expect(cloud.row?.data.version).toBe(2);
+    expect(cloud.row?.data.version).toBe(3);
     expect(cloud.row?.revision).toBe(2);
     expect(getFavorites()).toEqual(['C|major']);
+  });
+  it('upgrades version-two saves and syncs a custom picking pattern without losing old chords', async () => {
+    const cloud = new FakeCloud();
+    const old = { ...emptySnapshot(), version: 2, progressions: { [progression.id]: { value: progression, modified: 20 } } };
+    cloud.row = { data: old as unknown as LibrarySnapshot, revision: 1 };
+    await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
+    expect(cloud.row?.data.version).toBe(3);
+    expect(getProgressions()).toEqual([progression]);
+    const patterned: SavedProgression = { ...progression, pattern: { mode: 'custom', stepsPerBeat: 2, steps: [
+      { kind: 'pick', strings: [1] }, { kind: 'pick', strings: [3, 5] }, { kind: 'down' }, { kind: 'rest' },
+    ] } };
+    expect(saveProgression(patterned)).toBe(true);
+    await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
+    localStorage.clear();
+    await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
+    expect(getProgressions()).toEqual([patterned]);
+    // The previous client accepts only v1/v2, so it refuses rather than rewriting v3.
+    expect([1, 2].includes(cloud.row!.data.version)).toBe(false);
   });
   it('merges and restores the separate triad application challenge using the existing lesson snapshot', async () => {
     const cloud = new FakeCloud();
@@ -234,7 +252,7 @@ describe('cloud sync', () => {
   });
   it('does not overwrite an unsupported newer cloud format', async () => {
     const cloud = new FakeCloud();
-    cloud.row = { data: { ...emptySnapshot(), version: 3 } as unknown as LibrarySnapshot, revision: 1 };
+    cloud.row = { data: { ...emptySnapshot(), version: 4 } as unknown as LibrarySnapshot, revision: 1 };
     toggleFavorite('C|major');
     await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(/unsupported format/);
     expect(cloud.row.revision).toBe(1);
@@ -248,6 +266,15 @@ describe('cloud sync', () => {
     await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(/unsupported progression data/);
     expect(cloud.row).toEqual({ data, revision: 4 });
     expect(getFavorites()).toEqual(['C|major']);
+  });
+  it('does not overwrite an unrecognized saved pattern in a cloud progression', async () => {
+    const cloud = new FakeCloud();
+    const damaged = { ...progression, pattern: { mode: 'custom', stepsPerBeat: 2, steps: [{ kind: 'pick', strings: [99] }] } };
+    const data = { ...emptySnapshot(), progressions: { [progression.id]: { value: damaged, modified: 1 } } };
+    cloud.row = { data: data as unknown as LibrarySnapshot, revision: 7 };
+    toggleFavorite('C|major');
+    await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(/unsupported progression data/);
+    expect(cloud.row).toEqual({ data, revision: 7 });
   });
   it('does not apply data after the session is no longer current', async () => {
     const cloud = new FakeCloud();

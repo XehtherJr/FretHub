@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import ChordDiagram from './ChordDiagram';
 import Fretboard from './Fretboard';
 import { getTuning } from '@core/tunings';
@@ -46,6 +46,30 @@ describe('ChordDiagram', () => {
     expect(figure.textContent).not.toContain('×');
   });
 
+  it('labels a higher partial barre with its actual suggested finger', () => {
+    const tuning = getTuning('standard');
+    const chord = buildChord('C', 'dominant-9');
+    const voicing = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxFret: 5, maxResults: 10000 })
+      .find((item) => item.frets.join(',') === [null, 3, 2, 3, 3, 3].join(','));
+    expect(voicing).toBeDefined();
+    render(<ChordDiagram voicing={voicing!} tuning={tuning} name="C9" />);
+    expect(screen.getByRole('img', { name: /C9, fret positions/ }).querySelector('.cd-barre')?.textContent).toBe('3');
+  });
+
+  it('renders and describes both independently fingered barres accessibly', () => {
+    const tuning = getTuning('standard');
+    const chord = buildChord('C', 'dominant-9');
+    const voicing = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxFret: 9, maxResults: 10000 })
+      .find((item) => item.frets.join(',') === [8, 7, 8, 7, 8, 8].join(','));
+    expect(voicing).toBeDefined();
+    render(<ChordDiagram voicing={voicing!} tuning={tuning} name="C9" />);
+    const figure = screen.getByRole('img', { name: /C9, fret positions/ });
+    expect([...figure.querySelectorAll('.cd-barre')].map((barre) => barre.textContent)).toEqual(['1', '4']);
+    expect(figure).toHaveAccessibleDescription(/Finger 1 barres fret 7 from string 5 through string 3/);
+    expect(figure).toHaveAccessibleDescription(/Finger 4 barres fret 8 from string 2 through string 1/);
+    expect(figure).toHaveAccessibleDescription(/string 6, fret 8, finger 2/);
+  });
+
   it('marks muted and open strings in the diagram header', () => {
     const chord = buildChord('C', 'major');
     const [voicing] = generateVoicings(chord.pitchClasses, getTuning('standard'), chord.rootPc);
@@ -71,6 +95,20 @@ describe('Fretboard', () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
+  it('places bass strings at the top and navigates in the visible direction', () => {
+    render(<Fretboard tuning={getTuning('standard')} fretCount={12} interactive />);
+    const board = screen.getByRole('group');
+    expect([...board.querySelectorAll('.fb-svg-string-label')].map((label) => label.textContent)).toEqual(['E2', 'A2', 'D3', 'G3', 'B3', 'E4']);
+    const low = within(board).getByRole('button', { name: /E2 string open, note E2/ });
+    const high = within(board).getByRole('button', { name: /E4 string open, note E4/ });
+    expect(parseFloat(low.style.top)).toBeLessThan(parseFloat(high.style.top));
+    low.focus();
+    fireEvent.keyDown(low, { key: 'ArrowDown' });
+    expect(within(board).getByRole('button', { name: /A2 string open, note A2/ })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(low).toHaveFocus();
+  });
+
   it('renders non-interactive scale markers as an image with no buttons', () => {
     const tuning = getTuning('standard');
     const { container } = render(
@@ -90,11 +128,11 @@ describe('Fretboard', () => {
     render(<Fretboard tuning={getTuning('standard')} capo={2} fretCount={12} interactive />);
     const board = screen.getByRole('group');
     const open = within(board).getByRole('button', { name: /E4 string open, capo fret 2, note F#4/ });
-    open.focus();
+    act(() => open.focus());
     fireEvent.keyDown(open, { key: 'ArrowRight' });
     const firstPlayable = within(board).getByRole('button', { name: /String 1, fret 3, note G4/ });
     expect(firstPlayable).toHaveFocus();
-    fireEvent.keyDown(firstPlayable, { key: 'ArrowDown' });
+    fireEvent.keyDown(firstPlayable, { key: 'ArrowUp' });
     expect(within(board).getByRole('button', { name: /String 2, fret 3, note D4/ })).toHaveFocus();
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
     expect(within(board).getByRole('button', { name: /B3 string open, capo fret 2, note C#4/ })).toHaveFocus();

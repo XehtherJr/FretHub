@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateVoicings, assignFingering, fretPc } from './voicing-engine';
+import { generateVoicings, searchVoicings, assignFingering, estimateVoicingDifficulty, estimateVoicingEase, interiorMutedCount, fretPc } from './voicing-engine';
 import { getTuning, applyCapo } from './tunings';
 import { buildChord, chordVoicingConstraints } from './chords';
 import { noteToPc } from './notes';
@@ -8,7 +8,7 @@ const STD = getTuning('standard');
 const DROP_D = getTuning('drop-d');
 
 /** Find a voicing matching an exact tab string like "x32010" (low-to-high). */
-function findShape(voicings: { frets: (number | null)[] }[], tab: string) {
+function findShape<T extends { frets: (number | null)[] }>(voicings: T[], tab: string): T | undefined {
   const wanted = tab.split('').map((c) => (c === 'x' ? null : Number(c)));
   return voicings.find((v) =>
     v.frets.length === wanted.length &&
@@ -42,6 +42,55 @@ describe('voicing engine — canonical open chord shapes', () => {
 
     const dm7 = generateVoicings(buildChord('D', 'minor-7').pitchClasses, STD, noteToPc('D'));
     expect(findShape(dm7, 'xx0211')).toBeTruthy();
+  });
+});
+
+describe('voicing search coverage', () => {
+  it('finds the complete Am9 x02413 and exposes it near other low-position shapes', () => {
+    const chord = buildChord('A', 'minor-9');
+    const search = searchVoicings(chord.pitchClasses, STD, chord.rootPc, {
+      ...chordVoicingConstraints(chord), requiredBass: chord.rootPc, sortBy: 'position', maxResults: 500,
+    });
+    const shape = findShape(search.voicings, 'x02413');
+    expect(shape).toBeDefined();
+    expect(search.voicings.indexOf(shape!)).toBeLessThan(16);
+    expect(shape!.midi).toEqual([null, 45, 52, 59, 60, 67]);
+    expect(new Set(shape!.pitchClasses)).toEqual(new Set(chord.pitchClasses));
+    expect(shape!.fingers).toEqual(['x', 0, 2, 4, 1, 3]);
+  });
+
+  it('searches high frets instead of discarding candidates after the first five', () => {
+    const chord = buildChord('A', 'minor-9');
+    const search = searchVoicings(chord.pitchClasses, STD, chord.rootPc, {
+      ...chordVoicingConstraints(chord), requiredBass: chord.rootPc, maxFret: 18, maxResults: 10000,
+    });
+    expect(search.searchTruncated).toBe(false);
+    expect(search.voicings.some((v) => v.frets.join(',') === [null, 12, 10, 12, 12, null].join(','))).toBe(true);
+  });
+
+  it('includes familiar complete and clearly omitting chord shapes across several families', () => {
+    const examples = [
+      { root: 'C', type: 'major-7', tab: 'x32000' },
+      { root: 'G', type: 'dominant-7', tab: '320001' },
+      { root: 'D', type: 'minor-7', tab: 'xx0211' },
+      { root: 'E', type: 'dominant-7sharp9', tab: '07678x' }, // E7#9 without the fifth
+      { root: 'G', type: 'dominant-13', tab: '3x345x' }, // G13 without 5, 9 and 11
+    ];
+    for (const { root, type, tab } of examples) {
+      const chord = buildChord(root, type);
+      const result = searchVoicings(chord.pitchClasses, STD, chord.rootPc, { ...chordVoicingConstraints(chord), maxResults: 10000 });
+      expect(findShape(result.voicings, tab), `${chord.shortName} ${tab}`).toBeDefined();
+    }
+  });
+
+  it('reports separately when a result limit or safety budget stops the search', () => {
+    const chord = buildChord('C', 'major');
+    const capped = searchVoicings(chord.pitchClasses, STD, chord.rootPc, { maxResults: 1 });
+    expect(capped.voicings).toHaveLength(1);
+    expect(capped.totalFound).toBeGreaterThan(1);
+    expect(capped.resultLimitReached).toBe(true);
+    const interrupted = searchVoicings(chord.pitchClasses, STD, chord.rootPc, { nodeBudget: 1 });
+    expect(interrupted.searchTruncated).toBe(true);
   });
 });
 
@@ -196,7 +245,88 @@ describe('voicing engine — musical validity', () => {
   });
 });
 
+describe('position and ease estimates', () => {
+  it('lets open strings coexist with a minimum fretted position, but excludes open-only shapes', () => {
+    const chord = buildChord('C', 'major');
+    const options = { minFret: 3, maxFret: 6, maxResults: 10000 };
+    const withOpen = searchVoicings(chord.pitchClasses, STD, chord.rootPc, options);
+    expect(findShape(withOpen.voicings, 'x35550')).toBeDefined();
+    expect(withOpen.voicings.every((voicing) => voicing.frets.some((fret) => fret !== null && fret >= 3)
+      && voicing.frets.every((fret) => fret === null || fret === 0 || fret >= 3))).toBe(true);
+    const closed = searchVoicings(chord.pitchClasses, STD, chord.rootPc, { ...options, allowOpen: false });
+    expect(findShape(closed.voicings, 'x35550')).toBeUndefined();
+    expect(closed.voicings.every((voicing) => !voicing.frets.includes(0))).toBe(true);
+
+    const power = buildChord('E', 'power');
+    const powerShapes = searchVoicings(power.pitchClasses, STD, power.rootPc, { ...options, maxMuted: 4 });
+    expect(powerShapes.voicings.length).toBeGreaterThan(0);
+    expect(powerShapes.voicings.every((voicing) => voicing.frets.some((fret) => fret !== null && fret >= 3))).toBe(true);
+  });
+
+  it('distinguishes interior skips from edge mutes and does not score a bass note as physical difficulty', () => {
+    const chord = buildChord('C', 'major');
+    const voicing = generateVoicings(chord.pitchClasses, STD, chord.rootPc, { maxResults: 1000 })
+      .find((item) => item.frets.join(',') === [null, 3, 2, 0, 1, 0].join(','))!;
+    expect(interiorMutedCount(voicing.frets)).toBe(0);
+    const interior = { ...voicing, frets: [3, null, 2, 0, 1, 0] };
+    expect(interiorMutedCount(interior.frets)).toBe(1);
+    expect(estimateVoicingEase(interior)).toBeGreaterThan(estimateVoicingEase(voicing));
+    expect(estimateVoicingDifficulty(interior).reasons).toContain('interior muted string requires selective picking or damping');
+    const alternateBassLabel = { ...voicing, bassPc: 4 };
+    expect(estimateVoicingEase(alternateBassLabel)).toBe(estimateVoicingEase(voicing));
+  });
+});
+
 describe('fingering assignment', () => {
+  it('uses separate fingers for common open A and Em instead of inventing a barre', () => {
+    expect(assignFingering([null, 0, 2, 2, 2, 0], true)).toEqual({
+      fingers: ['x', 0, 1, 2, 3, 0], barre: undefined, fingerCount: 3,
+    });
+    expect(assignFingering([0, 2, 2, 0, 0, 0], true)).toEqual({
+      fingers: [0, 1, 2, 0, 0, 0], barre: undefined, fingerCount: 2,
+    });
+  });
+
+  it('prefers the lower index barre in the common C A-shape x35553', () => {
+    expect(assignFingering([null, 3, 5, 5, 5, 3], true)).toEqual({
+      fingers: ['x', 1, 2, 3, 4, 1], barre: { fret: 3, stringFrom: 1, stringTo: 5 }, fingerCount: 4,
+    });
+  });
+
+  it('can propagate two separately numbered barres for C9 878788', () => {
+    const frets = [8, 7, 8, 7, 8, 8];
+    const result = assignFingering(frets, true)!;
+    expect(result.fingers).toEqual([2, 1, 3, 1, 4, 4]);
+    expect(result.barres).toEqual([
+      { fret: 7, stringFrom: 1, stringTo: 3 },
+      { fret: 8, stringFrom: 4, stringTo: 5 },
+    ]);
+    expect(result.barre).toEqual(result.barres![0]); // compatibility for older callers
+    expect(assignFingering(frets, false)).toBeNull();
+    const chord = buildChord('C', 'dominant-9');
+    const found = searchVoicings(chord.pitchClasses, STD, chord.rootPc, {
+      ...chordVoicingConstraints(chord), maxFret: 9, maxResults: 10000,
+    });
+    const voicing = findShape(found.voicings, '878788');
+    expect(voicing?.barres).toEqual(result.barres);
+    expect(estimateVoicingDifficulty(voicing!).level).toBe('advanced');
+    expect(estimateVoicingDifficulty(voicing!).reasons).toContain('two barres');
+  });
+
+  it('never proposes a barre crossing an open, muted or lower-fretted string', () => {
+    for (const frets of [[1, 3, 0, 3, 1, 1], [1, 3, null, 3, 1, 1], [1, 3, 2, 3, 1, 1]]) {
+      const result = assignFingering(frets, true);
+      const barres = result?.barres ?? (result?.barre ? [result.barre] : []);
+      for (const barre of barres) {
+        expect(frets[barre.stringFrom]).toBe(barre.fret);
+        expect(frets[barre.stringTo]).toBe(barre.fret);
+        for (let index = barre.stringFrom; index <= barre.stringTo; index++) {
+          expect(frets[index] !== null && frets[index]! >= barre.fret).toBe(true);
+        }
+      }
+    }
+  });
+
   it('detects a barre and assigns finger 1 across it', () => {
     // F major barre: 133211 (E-shaped at fret 1)
     const result = assignFingering([1, 3, 3, 2, 1, 1], true);
@@ -204,6 +334,20 @@ describe('fingering assignment', () => {
     expect(result!.barre).toEqual({ fret: 1, stringFrom: 0, stringTo: 5 });
     expect(result!.fingers).toEqual([1, 3, 4, 2, 1, 1]);
     expect(result!.fingerCount).toBeLessThanOrEqual(4);
+  });
+
+  it('allows a higher partial barre with a lower fretted note, as in C9 x32333', () => {
+    const frets = [null, 3, 2, 3, 3, 3];
+    const result = assignFingering(frets, true);
+    expect(result).toEqual({ fingers: ['x', 2, 1, 3, 3, 3], barre: { fret: 3, stringFrom: 3, stringTo: 5 }, fingerCount: 3 });
+    expect(assignFingering(frets, false)).toBeNull();
+    const chord = buildChord('C', 'dominant-9');
+    const found = searchVoicings(chord.pitchClasses, STD, chord.rootPc, {
+      ...chordVoicingConstraints(chord), maxFret: 5, maxResults: 10000,
+    });
+    const voicing = findShape(found.voicings, 'x32333');
+    expect(voicing).toBeDefined();
+    expect(new Set(voicing!.pitchClasses)).toEqual(new Set(chord.pitchClasses));
   });
 
   it('does not assign one finger to unrelated frets or barre across an open string', () => {

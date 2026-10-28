@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buildChord, BuiltChord, chordVoicingConstraints } from '@core/chords';
 import { getChordType } from '@core/chord-definitions';
 import { TUNINGS, getTuning, applyCapo } from '@core/tunings';
-import { generateVoicings, Voicing } from '@core/voicing-engine';
+import { estimateVoicingDifficulty, searchVoicings } from '@core/voicing-engine';
 import { noteToPc, pcToNote } from '@core/notes';
 import { addRecent, getNote, saveNote, LIBRARY_CHANGE_EVENT } from '@core/storage';
 import { chordPath, chordKey as makeKey, fretboardChordPath, instrumentFromSearch, triadStudyPath } from '@/lib/urls';
@@ -14,7 +14,9 @@ import EmptyState from '@/components/EmptyState';
 import { useFavorites } from '@/hooks/useFavorites';
 import { showToast } from '@/components/Toast';
 
-const FRET_WINDOWS = [5, 9, 14, 18];
+const FRET_WINDOWS = Array.from({ length: 24 }, (_, index) => index + 1);
+const MIN_FRETS = [0, ...FRET_WINDOWS];
+const VOICINGS_PER_PAGE = 16;
 
 function parseBass(value: string | null): number | null {
   if (!value) return null;
@@ -28,20 +30,22 @@ export default function ChordDetailPage() {
   const rootName = decodeURIComponent(params.root ?? '');
   const typeId = decodeURIComponent(params.type ?? '');
 
-  let chord: BuiltChord | undefined;
-  let invalid = false;
-  try {
-    chord = buildChord(rootName, typeId);
-  } catch {
-    invalid = true;
-  }
+  const chord = useMemo<BuiltChord | undefined>(() => {
+    try { return buildChord(rootName, typeId); } catch { return undefined; }
+  }, [rootName, typeId]);
 
   const [tuningId, setTuningId] = useState(() => instrumentFromSearch(searchParams).tuning);
   const [capo, setCapo] = useState(() => instrumentFromSearch(searchParams).capo);
+  const [minFret, setMinFret] = useState(0);
   const [maxFret, setMaxFret] = useState(14);
   const [maxSpan, setMaxSpan] = useState(4);
+  const [maxMuted, setMaxMuted] = useState<number | null>(null);
   const [allowOpen, setAllowOpen] = useState(true);
   const [allowBarre, setAllowBarre] = useState(true);
+  const [sortBy, setSortBy] = useState<'position' | 'score'>('position');
+  const [visibleVoicings, setVisibleVoicings] = useState(VOICINGS_PER_PAGE);
+  const [voicingPage, setVoicingPage] = useState(1);
+  const [pageInput, setPageInput] = useState('1');
   const [bassPc, setBassPc] = useState<number | null>(() => parseBass(requestedBassName));
   const [noteText, setNoteText] = useState('');
   const [noteConflict, setNoteConflict] = useState(false);
@@ -73,6 +77,11 @@ export default function ChordDetailPage() {
   }, [rootName, typeId, requestedBassName, searchParams]);
 
   const tuning = useMemo(() => applyCapo(getTuning(tuningId), capo), [tuningId, capo]);
+  useEffect(() => { setMaxMuted(null); }, [tuningId]);
+  useEffect(() => {
+    setMaxFret((current) => Math.min(current, 24 - capo));
+    setMinFret((current) => current > 24 - capo ? 0 : current);
+  }, [capo]);
   const key = chord ? makeKey(chord.rootName, chord.typeId) : '';
   useEffect(() => {
     if (!key) return;
@@ -86,25 +95,43 @@ export default function ChordDetailPage() {
     return () => { window.removeEventListener(LIBRARY_CHANGE_EVENT, refresh); window.removeEventListener('storage', refresh); };
   }, [key]);
 
-  const voicings = useMemo<Voicing[]>(() => {
-    if (!chord) return [];
+  const search = useMemo(() => {
+    if (!chord) return { voicings: [], totalFound: 0, searchTruncated: false, resultLimitReached: false };
     const constraints = chordVoicingConstraints(chord);
     const tones = bassPc !== null && !chord.pitchClasses.includes(bassPc) ? [...chord.pitchClasses, bassPc] : chord.pitchClasses;
-    return generateVoicings(tones, tuning, chord.rootPc, {
+    return searchVoicings(tones, tuning, chord.rootPc, {
       ...constraints,
       // The workbench represents at most 24 physical frets; generated
       // diagrams must remain playable within that same neck after a capo.
+      minFret,
       maxFret: Math.min(maxFret, 24 - capo),
       maxSpan,
       allowOpen,
       allowBarre,
-      maxMuted: constraints.requiredVoicing ? Math.max(2, tuning.strings.length - constraints.requiredVoicing.length) : 2,
+      maxMuted: maxMuted ?? (constraints.requiredVoicing ? Math.max(2, tuning.strings.length - constraints.requiredVoicing.length) : 2),
       requiredBass: bassPc ?? undefined,
-      maxResults: 30,
+      sortBy,
+      // Search already constructs and sorts the found shapes. Rendering is
+      // paged, so there is no need to discard results at an arbitrary cap.
+      maxResults: Number.MAX_SAFE_INTEGER,
     });
-  }, [chord, tuning, capo, maxFret, maxSpan, allowOpen, allowBarre, bassPc]);
+  }, [chord, tuning, capo, minFret, maxFret, maxSpan, maxMuted, allowOpen, allowBarre, bassPc, sortBy]);
+  const voicings = search.voicings;
+  const totalPages = Math.max(1, Math.ceil(voicings.length / VOICINGS_PER_PAGE));
+  const currentPage = Math.min(voicingPage, totalPages);
+  const firstVisible = (currentPage - 1) * VOICINGS_PER_PAGE;
+  const lastVisible = Math.min(firstVisible + visibleVoicings, voicings.length);
+  const lastVisiblePage = Math.max(1, Math.ceil(lastVisible / VOICINGS_PER_PAGE));
+  const goToPage = (page: number) => {
+    const next = Math.max(1, Math.min(totalPages, page));
+    setVoicingPage(next);
+    setVisibleVoicings(VOICINGS_PER_PAGE);
+    setPageInput(String(next));
+  };
 
-  if (invalid || !chord) {
+  useEffect(() => { setVisibleVoicings(VOICINGS_PER_PAGE); setVoicingPage(1); setPageInput('1'); }, [rootName, typeId, tuningId, capo, minFret, maxFret, maxSpan, maxMuted, allowOpen, allowBarre, bassPc, sortBy]);
+
+  if (!chord) {
     return (
       <div className="page page-narrow">
         <EmptyState
@@ -188,7 +215,7 @@ export default function ChordDetailPage() {
             </table>
           </div>
           <p className="small faint" style={{ marginTop: '0.8rem', marginBottom: 0 }}>
-            Interval formula: <code>{chord.formula.join('  ')}</code>
+            {type.requireOneOf ? 'Interval options' : 'Interval formula'}: <code>{chord.formula.join('  ')}</code>
           </p>
         </section>
 
@@ -198,10 +225,10 @@ export default function ChordDetailPage() {
           <div className="row">
             <span className="pill tone">Root: {chord.rootName}</span>
             <span className="pill cool">Bass: {bassPc === null ? 'varies' : selectedChord.bassName}</span>
-            <span className="pill">{chord.tones.length} tones</span>
+            <span className="pill">{type.requireOneOf ? `${chord.tones.length - type.requireOneOf.length} core · ${type.requireOneOf.length} alteration options` : `${chord.tones.length} tones`}</span>
             {type.omittable && <span className="pill scale">Omits allowed: {type.omittable.join(', ')}</span>}
           </div>
-          {type.requireOneOf && <p className="small muted">At least one of {type.requireOneOf.join(', ')} must sound in an altered voicing.</p>}
+          {type.requireOneOf && <p className="small muted">At least one of {type.requireOneOf.join(', ')} must sound in an altered voicing. These are alternatives, not a requirement to play every alteration together.</p>}
           <h3 style={{ marginTop: '1rem' }}>Related {chord.rootName} chords</h3>
           <div className="row">
             {related.map((r) => (
@@ -216,10 +243,10 @@ export default function ChordDetailPage() {
       <section className="card voicing-section" style={{ marginTop: '1rem' }}>
         <div className="spread">
           <h2 style={{ margin: 0 }}>Voicings</h2>
-          <span className="small muted">{voicings.length} generated for {tuning.name}</span>
+          <span className="small muted" aria-live="polite">Showing {voicings.length ? `${firstVisible + 1}–${lastVisible}` : '0'} of {search.searchTruncated ? 'at least ' : ''}{search.totalFound} found for {tuning.name}</span>
         </div>
         <p className="small muted">
-          Calculated by the voicing engine from the formula above — every diagram contains chord tones{nonChordBass ? ' and the selected non-chord bass' : ''} and is fingered for four fretting fingers.
+          Calculated from the formula above. Diagrams use its chord tones{nonChordBass ? ' and the selected non-chord bass' : ''}; any omitted optional notes are labeled. Fingering uses an estimated four-finger limit.
           {type.voicingPattern && ' This name requires the specific ascending note order described above.'}
         </p>
 
@@ -234,16 +261,22 @@ export default function ChordDetailPage() {
           </div>
           <div className="field">
             <label htmlFor="capo">Capo</label>
-            <select id="capo" value={capo} onChange={(e) => setCapo(Number(e.target.value))}>
+            <select id="capo" value={capo} onChange={(event) => setCapo(Number(event.target.value))}>
               {Array.from({ length: 8 }, (_, c) => (
                 <option key={c} value={c}>{c === 0 ? 'None' : `Fret ${c}`}</option>
               ))}
             </select>
           </div>
           <div className="field">
+            <label htmlFor="minfret">Lowest fretted position</label>
+            <select id="minfret" value={minFret} onChange={(event) => setMinFret(Number(event.target.value))}>
+              {MIN_FRETS.map((fret) => <option key={fret} value={fret} disabled={fret > maxFret}>{fret === 0 ? 'Any position' : `From fret ${fret}`}</option>)}
+            </select>
+          </div>
+          <div className="field">
             <label htmlFor="maxfret">Fret window</label>
-            <select id="maxfret" value={maxFret} onChange={(e) => setMaxFret(Number(e.target.value))}>
-              {FRET_WINDOWS.map((f) => <option key={f} value={f}>Up to fret {f}</option>)}
+            <select id="maxfret" value={maxFret} onChange={(event) => { const next = Number(event.target.value); setMaxFret(next); if (minFret > next) setMinFret(0); }}>
+              {FRET_WINDOWS.map((f) => <option key={f} value={f} disabled={f > 24 - capo}>Up to fret {f}</option>)}
             </select>
           </div>
           <div className="field">
@@ -253,13 +286,27 @@ export default function ChordDetailPage() {
             </select>
           </div>
           <div className="field">
+            <label htmlFor="max-muted">Maximum muted strings</label>
+            <select id="max-muted" value={maxMuted ?? ''} onChange={(event) => setMaxMuted(event.target.value === '' ? null : Number(event.target.value))}>
+              <option value="">Default ({type.voicingPattern ? Math.max(2, tuning.strings.length - type.voicingPattern.length) : 2})</option>
+              {Array.from({ length: tuning.strings.length - 1 }, (_, count) => <option key={count} value={count}>{count}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="voicing-sort">Sort voicings</label>
+            <select id="voicing-sort" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'position' | 'score')}>
+              <option value="position">Lowest fret position first</option>
+              <option value="score">Estimated ease first</option>
+            </select>
+          </div>
+          <div className="field">
             <label htmlFor="bass">Bass note</label>
             <select
               id="bass"
               value={bassPc ?? ''}
               onChange={(e) => setBassPc(e.target.value === '' ? null : Number(e.target.value))}
             >
-              <option value="">Any bass (root preferred)</option>
+              <option value="">Any bass</option>
               <optgroup label="Chord-tone bass">
                 <option value={chord.rootPc}>Root position ({chord.rootName})</option>
                 {chord.tones.filter((t) => t.pc !== chord.rootPc).map((t) => (
@@ -278,7 +325,14 @@ export default function ChordDetailPage() {
           </div>
         </div>
 
-        <p className="small muted" style={{ marginTop: '0.8rem' }}>Finger numbers and playability labels are estimates, not guarantees. Other fingerings may work and some valid shapes may be omitted. {capo > 0 && `Chart fret numbers are relative to the capo at fret ${capo}.`} {capo + maxFret > 24 && 'Results stop at physical fret 24.'}</p>
+        <p className="small muted" style={{ marginTop: '0.8rem' }}>Finger numbers and playability labels are estimates, not guarantees. The model allows up to two barres and no fretting thumb; other shapes or fingerings may work. Stretch is the difference between the highest and lowest fretted numbers. Open strings remain eligible when enabled, even with a higher starting fret. {capo > 0 && `Chart fret numbers are relative to the capo at fret ${capo}.`} The highest fret choice stops at physical fret 24.</p>
+        <details className="voicing-method small">
+          <summary>How are results and difficulty estimated?</summary>
+          <p>Lowest position sorts by the lowest fretted note, ignoring open strings. Estimated ease uses an uncalibrated preference for smaller spans, fewer fingers and barres, fewer interior skipped strings, and familiar low-position open shapes. It is not a measurement of your hand, instrument or technique.</p>
+          <p>Completeness and root bass break ties; a different bass does not make a shape physically harder. Grades use similar rough factors. Try other fingerings and pick or damp skipped strings as needed.</p>
+        </details>
+        {search.searchTruncated && <p className="small" role="status">The search reached its safety limit and is incomplete. Narrow the starting and ending frets, stretch, or muted-string limit to explore more reliably.</p>}
+        {search.resultLimitReached && <p className="small muted">The result limit was reached; not all found shapes are displayed.</p>}
         <div className="row" style={{ marginBottom: '1.2rem', marginTop: '0.8rem' }}>
           <button type="button" className="btn btn-sm" aria-pressed={allowOpen} onClick={() => setAllowOpen((v) => !v)}>
             Open strings {allowOpen ? 'on' : 'off'}
@@ -290,20 +344,22 @@ export default function ChordDetailPage() {
 
         {voicings.length === 0 ? (
           <EmptyState
-            icon="🤔"
-            title="No playable voicings found with these constraints"
-            action={<button className="btn" onClick={() => { setMaxFret(18); setMaxSpan(5); setAllowOpen(true); setAllowBarre(true); setBassPc(null); }}>
-              Relax the constraints
-            </button>}
+            icon="–"
+            title={search.searchTruncated ? 'No voicings found before the search limit' : 'No voicings found within these constraints'}
+            action={search.searchTruncated
+              ? <button className="btn" onClick={() => { setMinFret(5); setMaxFret(9); setMaxSpan(4); setMaxMuted(null); }}>Search frets 5–9</button>
+              : <button className="btn" onClick={() => { setMinFret(0); setMaxFret(18); setMaxSpan(5); setMaxMuted(null); setAllowOpen(true); setAllowBarre(true); setBassPc(null); }}>Relax the constraints</button>}
           >
-            Try widening the fret window, allowing open strings or barres, or clearing the bass-note filter.
+            {search.searchTruncated ? 'Narrow the search before assuming there are no other shapes.' : 'Try widening the fret window, allowing open strings or barres, or clearing the bass-note filter.'}
           </EmptyState>
         ) : (
           <div className="voicing-grid">
-            {voicings.slice(0, 16).map((voicing, idx) => {
+            {voicings.slice(firstVisible, lastVisible).map((voicing, idx) => {
+              const estimate = estimateVoicingDifficulty(voicing);
               const tab = voicing.frets.map((f) => (f === null ? 'x' : String(f))).join(' ');
               const covered = new Set(voicing.pitchClasses);
-              const omitted = chord.tones.filter((t) => !covered.has(t.pc));
+              const omitted = chord.tones.filter((t) => !covered.has(t.pc) && !type.requireOneOf?.includes(t.interval));
+              const alterations = chord.tones.filter((t) => covered.has(t.pc) && type.requireOneOf?.includes(t.interval));
               const voicingName = buildChord(chord.rootName, chord.typeId, voicing.bassPc === null ? undefined : preferredBassName(voicing.bassPc)).shortName;
               return (
                 <div className="voicing-item" key={tab + idx}>
@@ -317,8 +373,9 @@ export default function ChordDetailPage() {
                   />
                   <p className="mono small" style={{ margin: '0.3rem 0' }}>{tab}</p>
                   <div className="row" style={{ justifyContent: 'center', marginBottom: '0.5rem' }}>
-                    <span className={`pill ${voicing.playability}`}>{voicing.playability}</span>
-                    {voicing.barre && <span className="pill cool">barre</span>}
+                    <span className={`pill ${voicing.playability}`} title={`Estimated from: ${estimate.reasons.join(', ')}`} aria-label={`Estimated ${voicing.playability}: ${estimate.reasons.join(', ')}`}>{voicing.playability}</span>
+                    {voicing.barre && <span className="pill cool">{voicing.barres && voicing.barres.length > 1 ? '2 barres' : 'barre'}</span>}
+                    {alterations.length > 0 && <span className="pill scale" title={`Altered tones present: ${alterations.map((tone) => tone.name).join(', ')}`}>with {alterations.map((tone) => tone.interval).join(',')}</span>}
                     {omitted.length > 0 && (
                       <span className="pill scale" title={`Omits ${omitted.map((o) => o.name).join(', ')}`}>
                         no {omitted.map((o) => o.interval).join(',')}
@@ -331,6 +388,22 @@ export default function ChordDetailPage() {
             })}
           </div>
         )}
+        {voicings.length > VOICINGS_PER_PAGE && <nav className="voicing-pagination" aria-label="Voicing pages">
+          <div className="row">
+            <button type="button" className="btn btn-sm" disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)}>Previous page</button>
+            <span className="small" aria-live="polite">Page {currentPage}{lastVisiblePage > currentPage ? `–${lastVisiblePage}` : ''} of {totalPages}</span>
+            <button type="button" className="btn btn-sm" disabled={lastVisiblePage >= totalPages} onClick={() => goToPage(lastVisiblePage + 1)}>Next page</button>
+          </div>
+          <form className="row" onSubmit={(event) => { event.preventDefault(); const page = Number(pageInput); if (Number.isInteger(page) && page >= 1 && page <= totalPages) goToPage(page); }}>
+            <label htmlFor="voicing-page" className="small">Go to page</label>
+            <input id="voicing-page" type="number" min="1" max={totalPages} step="1" required value={pageInput} onChange={(event) => setPageInput(event.target.value)} />
+            <button type="submit" className="btn btn-sm">Go</button>
+          </form>
+          <div className="row">
+            {lastVisible < voicings.length && visibleVoicings < VOICINGS_PER_PAGE * 4 && <button type="button" className="btn btn-sm" onClick={() => setVisibleVoicings((count) => count + VOICINGS_PER_PAGE)}>Show more voicings</button>}
+            {visibleVoicings > VOICINGS_PER_PAGE && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setVisibleVoicings(VOICINGS_PER_PAGE)}>Show fewer voicings</button>}
+          </div>
+        </nav>}
       </section>
 
       <section className="card" style={{ marginTop: '1rem' }}>

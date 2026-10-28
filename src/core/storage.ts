@@ -48,8 +48,8 @@ function notify(source: 'local' | 'sync' = 'local'): void {
 
 export interface VersionedValue<T> { value: T; modified: number }
 export interface LibrarySnapshot {
-  // Version 2 prevents older clients from silently dropping saved progressions.
-  version: 2;
+  // Version 3 prevents older clients from silently dropping picking patterns.
+  version: 3;
   favorites: Record<string, VersionedValue<boolean>>;
   notes: Record<string, VersionedValue<string>>;
   lessons: Record<string, VersionedValue<boolean>>;
@@ -71,7 +71,7 @@ function stamp(part: SnapshotPart, key: string, value: boolean | string): void {
 }
 
 export function emptySnapshot(): LibrarySnapshot {
-  return { version: 2, favorites: {}, notes: {}, lessons: {}, progressions: {} };
+  return { version: 3, favorites: {}, notes: {}, lessons: {}, progressions: {} };
 }
 
 /** JSONB may return object properties in a different order than localStorage. */
@@ -85,7 +85,7 @@ export function canonicalJson(value: unknown): string {
 /** Validate remote JSON before it can affect local state. */
 export function normalizeSnapshot(input: unknown): LibrarySnapshot {
   const result = emptySnapshot();
-  if (!input || typeof input !== 'object' || ![1, 2].includes((input as { version?: number }).version ?? 0)) return result;
+  if (!input || typeof input !== 'object' || ![1, 2, 3].includes((input as { version?: number }).version ?? 0)) return result;
   const source = input as Record<string, unknown>;
   for (const part of ['favorites', 'notes', 'lessons'] as const) {
     const records = source[part];

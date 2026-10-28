@@ -99,6 +99,169 @@ describe('fretboard progression builder', () => {
     expect(lowest % 12).toBe(2); // D is the actual sounding bass, including in alternate tunings.
   });
 
+  it('plays and saves the requested mixed-string picking pattern, and restores it when loaded', () => {
+    const board = renderBuilder();
+    choose(board, cShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: 'A-D-G-B-G-G+E4' } });
+    expect(screen.getByText('Pattern ready.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Play progression' }));
+    expect(startProgressionPlayback).toHaveBeenCalledWith([
+      { midi: [null, 48, 52, 55, 60, 64], beats: 4 },
+    ], 90, false, expect.any(Object), { mode: 'custom', stepsPerBeat: 2, steps: [
+      { kind: 'pick', strings: [1] }, { kind: 'pick', strings: [2] }, { kind: 'pick', strings: [3] },
+      { kind: 'pick', strings: [4] }, { kind: 'pick', strings: [3] }, { kind: 'pick', strings: [3, 5] },
+    ] });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
+    fireEvent.change(screen.getByLabelText('Progression name'), { target: { value: 'Picking idea' } });
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    expect(getProgressions()[0].pattern).toMatchObject({ mode: 'custom', stepsPerBeat: 2 });
+    fireEvent.click(screen.getByRole('button', { name: 'New progression' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load Picking idea' }));
+    expect(screen.getByLabelText('Playback style')).toHaveValue('custom');
+    expect(screen.getByLabelText('Pattern steps')).toHaveValue('5 4 3 2 3 3+1');
+    expect(screen.getByLabelText('Step timing')).toHaveValue('2');
+  });
+
+  it('starts a button-built custom pattern empty and plays exactly those steps on two four-beat chords', () => {
+    const board = renderBuilder();
+    choose(board, cShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Clear$/ }));
+    choose(board, gShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Step timing'), { target: { value: '1' } });
+    expect(screen.getByLabelText('Pattern steps')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
+    fireEvent.click(screen.getByText('Build steps with buttons'));
+    fireEvent.click(screen.getByLabelText('3 · G3'));
+    fireEvent.click(screen.getByLabelText('1 · E4'));
+    expect(screen.getByText(/Selected strings are not in the pattern yet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add picked step' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add rest' }));
+    fireEvent.click(screen.getByLabelText('2 · B3'));
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add picked step' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add down strum' }));
+    expect(screen.getByLabelText('Pattern steps')).toHaveValue('3+1 rest 2 down');
+    fireEvent.click(screen.getByRole('button', { name: 'Play progression' }));
+    expect(startProgressionPlayback).toHaveBeenCalledWith([
+      { midi: [null, 48, 52, 55, 60, 64], beats: 4 },
+      { midi: [43, 47, 50, 55, 59, 67], beats: 4 },
+    ], 90, false, expect.any(Object), { mode: 'custom', stepsPerBeat: 1, steps: [
+      { kind: 'pick', strings: [3, 5] }, { kind: 'rest' }, { kind: 'pick', strings: [4] }, { kind: 'down' },
+    ] });
+  });
+
+  it('explains steps that cannot fit and picked strings muted in a chord', () => {
+    const board = renderBuilder();
+    choose(board, cShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Clear$/ }));
+    choose(board, gShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Step timing'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: '6 5 3+1 rest 2 down' } });
+    expect(screen.getByText(/Some steps won’t play before the chord changes/)).toBeInTheDocument();
+    expect(screen.getByText(/Chord 1 \(C\): 4 beats × 1 step per beat = 4 steps\. Steps 5–6 won’t play/)).toBeInTheDocument();
+    expect(screen.getByText(/Chord 2 \(G\): 4 beats × 1 step per beat = 4 steps\. Steps 5–6 won’t play/)).toBeInTheDocument();
+    expect(screen.getByText(/Chord 1 \(C\): step 1 \(string 6\)/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Beats for chord 2, G'), { target: { value: '6' } });
+    expect(screen.queryByText(/Chord 2 \(G\): 4 beats ×/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Step timing'), { target: { value: '2' } });
+    expect(screen.queryByText(/Some steps won’t play before the chord changes/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Chord 1 \(C\): step 1 \(string 6\)/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: 'rest' } });
+    expect(screen.getByText(/only rests, so playback will be silent/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeEnabled();
+  });
+
+  it('builds simultaneous picks, strums and rests with buttons and blocks invalid patterns', () => {
+    const board = renderBuilder();
+    choose(board, cShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.click(screen.getByText('Build steps with buttons'));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear pattern' }));
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save progression' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('3 · G3'));
+    fireEvent.click(screen.getByLabelText('1 · E4'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add picked step' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add down strum' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add up strum' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add rest' }));
+    expect(screen.getByLabelText('Pattern steps')).toHaveValue('3+1 down up rest');
+    fireEvent.change(screen.getByLabelText('Step timing'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Play progression' }));
+    expect(vi.mocked(startProgressionPlayback).mock.calls[0][4]).toEqual({ mode: 'custom', stepsPerBeat: 3, steps: [
+      { kind: 'pick', strings: [3, 5] }, { kind: 'down' }, { kind: 'up' }, { kind: 'rest' },
+    ] });
+    fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: 'E' } });
+    expect(screen.getByText(/is ambiguous/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
+  });
+
+  it('protects unadded string selections and clears them when a saved pattern is loaded', () => {
+    const board = renderBuilder();
+    choose(board, cShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: '5 4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
+    fireEvent.change(screen.getByLabelText('Progression name'), { target: { value: 'My pattern' } });
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    fireEvent.click(screen.getByText('Build steps with buttons'));
+    fireEvent.click(screen.getByLabelText('3 · G3'));
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    fireEvent.click(screen.getByText('Build steps with buttons'));
+    expect(screen.getByText(/Selected strings are not in the pattern yet/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Clear selected strings' })).toBeVisible();
+    fireEvent.click(screen.getByText('Build steps with buttons'));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'single' } });
+    expect(screen.getByLabelText('Playback style')).toHaveValue('custom');
+    expect(screen.getByLabelText('3 · G3')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'New progression' }));
+    expect(confirm).toHaveBeenCalled();
+    expect(screen.getByLabelText('3 · G3')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Load My pattern' }));
+    expect(screen.getByLabelText('3 · G3')).toBeChecked();
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Load My pattern' }));
+    expect(screen.getByLabelText('3 · G3')).not.toBeChecked();
+    expect(screen.getByLabelText('Pattern steps')).toHaveValue('5 4');
+    expect(screen.getByRole('button', { name: 'Play progression' })).toBeEnabled();
+  });
+
+  it('preserves pending string numbers across tuning changes and explains unavailable strings', () => {
+    renderBuilder();
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.click(screen.getByText('Build steps with buttons'));
+    fireEvent.click(screen.getByLabelText('3 · G3'));
+    fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: '7-string-standard' } });
+    expect(screen.getByLabelText('3 · G3')).toBeChecked();
+    fireEvent.click(screen.getByLabelText('7 · B1'));
+    fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'standard' } });
+    expect(screen.getByLabelText('3 · G3')).toBeChecked();
+    expect(screen.getByText(/Some selected strings are unavailable in this tuning and were cleared/)).toBeVisible();
+  });
+
+  it('uses a repeating arpeggio while retaining the original one-strum behavior for older saves', () => {
+    const board = renderBuilder();
+    choose(board, cShape);
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'arpeggio' } });
+    fireEvent.change(screen.getByLabelText('Step timing'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Play progression' }));
+    expect(vi.mocked(startProgressionPlayback).mock.calls[0][4]).toEqual({ mode: 'arpeggio', stepsPerBeat: 4 });
+  });
+
   it('does not silently label an unrelated selected shape as a typed chord', () => {
     const board = renderBuilder();
     choose(board, cShape);
@@ -211,6 +374,26 @@ describe('fretboard progression builder', () => {
     expect(startProgressionPlayback).toHaveBeenCalledWith([
       { midi: progressionMidi(item.chords[0].frets, 'drop-d', 2), beats: 4 },
     ], 90, false, expect.any(Object));
+  });
+
+  it('keeps pattern string identities and sounding frets correct with alternate tuning and capo', () => {
+    renderBuilder();
+    fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'drop-d' } });
+    fireEvent.change(screen.getByLabelText('Capo', { exact: true }), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show chord on neck' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
+    fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: 'D2 D3 E4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    const item = getProgressions()[0];
+    expect(item.pattern).toEqual({ mode: 'custom', stepsPerBeat: 2, steps: [
+      { kind: 'pick', strings: [0] }, { kind: 'pick', strings: [2] }, { kind: 'pick', strings: [5] },
+    ] });
+    fireEvent.click(screen.getByRole('button', { name: 'Play progression' }));
+    expect(startProgressionPlayback).toHaveBeenCalledWith([
+      { midi: progressionMidi(item.chords[0].frets, 'drop-d', 2), beats: 4 },
+    ], 90, false, expect.any(Object), item.pattern);
   });
 
   it('protects an existing sequence from mixing capo or tuning setups', () => {
