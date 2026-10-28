@@ -4,7 +4,7 @@
  */
 import { buildChord, type BuiltChord, type ChordTone } from './chords';
 import { getChordType } from './chord-definitions';
-import { intervalSemitones } from './intervals';
+import { intervalSemitones, spellInterval } from './intervals';
 import { fretToMidi, normalizePc, noteToPc } from './notes';
 import { buildScale, SCALE_TYPES, type ScaleType } from './scales';
 import type { Tuning } from './tunings';
@@ -99,25 +99,54 @@ export interface ThirdTask {
   stringIndex: number;
   /** The learner may use any correct position on this string in this range. */
   minimumFret: number;
+  /** One playable root from which the third can be reached on the same string. */
+  rootFret: number;
+  thirdFret: number;
   third: ChordTone;
 }
 
-/** Pick a reachable, preferably higher-position third, optionally on a new string. */
+/** Physical fret reached by counting up from an open/capoed or fretted root. */
+export function thirdFretFromRoot(rootFret: number, capo: number, fretCount: number, distance: number): number | null {
+  if (rootFret < 0 || (rootFret !== 0 && rootFret <= capo)) return null;
+  const target = (rootFret === 0 ? capo : rootFret) + distance;
+  return target <= fretCount ? target : null;
+}
+
+/** Pick a higher-position third with a reachable root on the same string. */
 export function thirdTask(chord: BuiltChord, tuning: Tuning, capo: number, fretCount: number, differentFrom?: number): ThirdTask | null {
   const third = chord.tones[1];
-  const positions = neckPositions(tuning, capo, fretCount).filter((position) => position.pc === third.pc);
-  const higher = Math.max(5, capo + 1);
-  let minimumFret = higher;
+  const distance = intervalSemitones(third.interval);
+  const positions = neckPositions(tuning, capo, fretCount).flatMap((position) => {
+    if (position.pc !== third.pc || position.fret === 0) return [];
+    const physicalRoot = position.fret - distance;
+    if (physicalRoot < capo) return [];
+    const rootFret = physicalRoot === capo ? 0 : physicalRoot;
+    if (fretPc(tuning, position.stringIndex, physicalRoot) !== chord.rootPc) return [];
+    return [{ ...position, rootFret }];
+  });
+  let minimumFret = Math.max(5, capo + 1);
   let candidates = positions.filter((position) => position.fret >= minimumFret);
   if (!candidates.length) {
     minimumFret = capo + 1;
     candidates = positions.filter((position) => position.fret >= minimumFret);
   }
-  if (!candidates.length) {
-    minimumFret = 0;
-    candidates = positions;
-  }
   candidates.sort((a, b) => b.stringIndex - a.stringIndex || a.fret - b.fret);
   const candidate = candidates.find((position) => position.stringIndex !== differentFrom) ?? candidates[0];
-  return candidate ? { stringIndex: candidate.stringIndex, minimumFret, third } : null;
+  return candidate ? { stringIndex: candidate.stringIndex, minimumFret, rootFret: candidate.rootFret, thirdFret: candidate.fret, third } : null;
+}
+
+/** Use a different key and string; widen the exercise only if the capo needs room. */
+export function thirdTransferPlan(chord: BuiltChord, tuning: Tuning, capo: number, fretCount: number) {
+  const transferChord = buildChord(spellInterval(chord.rootName, '4'), chord.typeId);
+  const windows = [...new Set([fretCount, 15, 22, 24])].filter((count) => count >= fretCount).sort((a, b) => a - b);
+  let fallback: { fretCount: number; first: ThirdTask; second: ThirdTask; transferChord: BuiltChord } | null = null;
+  for (const count of windows) {
+    const first = thirdTask(chord, tuning, capo, count);
+    const second = first && thirdTask(transferChord, tuning, capo, count, first.stringIndex);
+    if (!first || !second) continue;
+    const plan = { fretCount: count, first, second, transferChord };
+    if (first.stringIndex !== second.stringIndex) return plan;
+    fallback ??= plan;
+  }
+  return fallback;
 }

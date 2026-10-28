@@ -57,7 +57,6 @@ function diatonicSet(
   minor: boolean,
 ): DiatonicChord[] {
   const scale = buildScale(root, scaleId);
-  const preferFlats = typeof root === 'string' && root.includes('b');
   const result: DiatonicChord[] = [];
 
   for (let degree = 0; degree < 7; degree++) {
@@ -75,7 +74,7 @@ function diatonicSet(
       roman: (minor ? ROMAN_MINOR : ROMAN_MAJOR)[degree],
       chordTypeId,
       rootPc: chordRoot,
-      rootName: pcToNote(chordRoot, preferFlats),
+      rootName: scale[degree].name,
       pitchClasses: [...new Set(pcs.map(normalizePc))],
       function: (minor ? FUNCTIONS_MINOR : FUNCTIONS_MAJOR)[degree],
     });
@@ -104,7 +103,6 @@ export function naturalMinorTriads(root: NoteName | number): DiatonicChord[] {
  */
 export function harmonicMinorTriads(root: NoteName | number): DiatonicChord[] {
   const scale = buildScale(root, 'harmonic-minor');
-  const preferFlats = typeof root === 'string' && root.includes('b');
   return scale.map((note, degree) => {
     const pcs = [
       scale[degree % 7].pc,
@@ -118,7 +116,7 @@ export function harmonicMinorTriads(root: NoteName | number): DiatonicChord[] {
       roman: ['i', 'ii°', 'III+', 'iv', 'V', 'VI', 'vii°'][degree],
       chordTypeId,
       rootPc: note.pc,
-      rootName: pcToNote(note.pc, preferFlats),
+      rootName: note.name,
       pitchClasses: [...new Set(pcs.map(normalizePc))],
       function: (FUNCTIONS_MINOR[degree] ?? 'other') as DiatonicChord['function'],
     };

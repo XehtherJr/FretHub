@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateVoicings, assignFingering, fretPc } from './voicing-engine';
 import { getTuning, applyCapo } from './tunings';
-import { buildChord } from './chords';
+import { buildChord, chordVoicingConstraints } from './chords';
 import { noteToPc } from './notes';
 
 const STD = getTuning('standard');
@@ -114,6 +114,42 @@ describe('voicing engine — musical validity', () => {
       for (const tone of chord.tones.filter((t) => ['1', '3', 'b7', '13'].includes(t.interval))) {
         expect(set.has(tone.pc)).toBe(true);
       }
+    }
+  });
+
+  it('keeps at least one alteration in every generated 7alt voicing', () => {
+    const chord = buildChord('C', 'dominant-alt');
+    const constraints = chordVoicingConstraints(chord);
+    const voicings = generateVoicings(chord.pitchClasses, STD, chord.rootPc, { ...constraints, maxResults: 100 });
+    expect(voicings.length).toBeGreaterThan(0);
+    for (const voicing of voicings) {
+      expect(constraints.requiredOneOf.some((pc) => voicing.pitchClasses.includes(pc))).toBe(true);
+      for (const note of ['C', 'E', 'Bb']) expect(voicing.pitchClasses).toContain(noteToPc(note));
+    }
+  });
+
+  it('generates the actual ordered So What shape, not just its pitch classes', () => {
+    const chord = buildChord('D', 'so-what');
+    const voicings = generateVoicings(chord.pitchClasses, STD, chord.rootPc, { ...chordVoicingConstraints(chord), maxResults: 100 });
+    expect(findShape(voicings, 'x55565')).toBeTruthy();
+    for (const voicing of voicings) {
+      const ascending = voicing.midi.filter((midi): midi is number => midi !== null).sort((a, b) => a - b);
+      expect(ascending.map((midi) => midi - ascending[0])).toEqual([0, 5, 10, 15, 19]);
+    }
+    const eight = getTuning('8-string-standard');
+    const extended = generateVoicings(chord.pitchClasses, eight, chord.rootPc, { ...chordVoicingConstraints(chord), maxMuted: 3 });
+    expect(extended.length).toBeGreaterThan(0);
+    expect(extended.every((voicing) => voicing.midi.filter((midi) => midi !== null).length === 5)).toBe(true);
+  });
+
+  it('can generate a complete D/C chord with C as the non-chord bass', () => {
+    const chord = buildChord('D', 'major');
+    const bass = noteToPc('C');
+    const voicings = generateVoicings([...chord.pitchClasses, bass], STD, chord.rootPc, { requiredBass: bass, maxResults: 50 });
+    expect(voicings.length).toBeGreaterThan(0);
+    for (const voicing of voicings) {
+      expect(voicing.bassPc).toBe(bass);
+      for (const pc of [...chord.pitchClasses, bass]) expect(voicing.pitchClasses).toContain(pc);
     }
   });
 

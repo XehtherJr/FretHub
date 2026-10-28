@@ -26,3 +26,39 @@ export function isAudibleBeat(beatIndex: number, beatsPerBar: number, audibleBar
   const cycle = beatsPerBar * (audibleBars + silentBars);
   return ((beatIndex % cycle) + cycle) % cycle < beatsPerBar * audibleBars;
 }
+
+/** One scheduler pulse is a notated denominator note, not always a conducting beat. */
+export interface TimeSignature {
+  id: string;
+  numerator: number;
+  denominator: 4 | 8;
+  /** Eighth-note group lengths, or one ungrouped set of quarter-note pulses. */
+  groups: readonly number[];
+}
+
+export const TIME_SIGNATURES: readonly TimeSignature[] = [
+  { id: '2/4', numerator: 2, denominator: 4, groups: [2] },
+  { id: '3/4', numerator: 3, denominator: 4, groups: [3] },
+  { id: '4/4', numerator: 4, denominator: 4, groups: [4] },
+  { id: '5/4', numerator: 5, denominator: 4, groups: [5] },
+  { id: '6/4', numerator: 6, denominator: 4, groups: [6] },
+  { id: '7/4', numerator: 7, denominator: 4, groups: [7] },
+  { id: '6/8', numerator: 6, denominator: 8, groups: [3, 3] },
+  { id: '7/8', numerator: 7, denominator: 8, groups: [2, 2, 3] },
+  { id: '12/8', numerator: 12, denominator: 8, groups: [3, 3, 3, 3] },
+];
+
+export const SEVEN_EIGHT_GROUPINGS: readonly (readonly number[])[] = [[2, 2, 3], [2, 3, 2], [3, 2, 2]];
+export type ClickAccent = boolean | 'group';
+
+/** Bar downbeat is strongest; secondary group starts get a lighter accent. */
+export function clickAccent(pulse: number, meter: TimeSignature, groups: readonly number[] = meter.groups): ClickAccent {
+  const position = ((pulse % meter.numerator) + meter.numerator) % meter.numerator;
+  if (position === 0) return true;
+  let start = 0;
+  for (const length of groups.slice(0, -1)) {
+    start += length;
+    if (position === start) return 'group';
+  }
+  return false;
+}

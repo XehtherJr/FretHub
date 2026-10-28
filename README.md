@@ -8,13 +8,13 @@ to browse, play sounds, practise, or save a library on the current device.
 
 | Area | Features |
 | --- | --- |
-| Fretboard | Equal-tempered physical fret geometry, 6/7/8-string tunings, capo, keyboard navigation, note selection, chord identification, scale and root-triad overlays. |
-| Chords | 41 formulas × 12 roots = 492 calculated chords, including augmented triads and augmented dominant sevenths. Search by name, symbol, notes or formula; generated voicings, fingering, barres and inversions. |
+| Fretboard | Equal-tempered physical fret geometry, 6/7/8-string tunings, capo, keyboard navigation, note selection, strum or arpeggiate selected strings, chord identification, scale and root-triad overlays. |
+| Chords | 54 chord/voicing definitions × 12 roots = 648 calculated entries, including suspended extensions and altered dominants. Search by name, symbol, notes or formula; generated voicings, fingering, barres and inversions. |
 | Sound | Locally hosted steel-string acoustic guitar recordings with pitch-corrected samples, strumming and a synthesized fallback if a sample cannot load. |
 | Theory | 15 ordered lessons with interactive labs, glossary and optional saved checks. The connected triad study follows a chord from its notes through the neck, inversions, scales, application and a two-key challenge. |
 | Scales and progressions | 17 scales and modes, arpeggio overlays, playable scales, diatonic chord tables and progression templates. |
-| Tuner | A separate chromatic tuner with a headstock, string reference notes, 13 tunings and real-time pitch feedback. |
-| Metronome | A separate audio-clock metronome with steady, timing-coach and disappearing-click modes; tap tempo, accents, beats per bar and optional device-latency calibration. |
+| Tuner | A local microphone tuner with automatic open-string targets, optional chromatic mode, selectable reference notes, 13 tunings and real-time pitch feedback. |
+| Metronome | An audio-clock metronome with steady, timing-coach and disappearing-click modes; tap tempo, quarter- and eighth-note meters, group accents and optional device-latency calibration. |
 | Practice | Chord and note quizzes, with local scores and streaks. The tuner and metronome are also accessible from Practice for existing users. |
 | Library | Favorites, chord notes, recent chords and lesson progress work locally. An optional passwordless account can sync favorites, notes and lesson challenges when a deployment configures the cloud service. |
 
@@ -72,7 +72,7 @@ src/
 │   ├── notes.ts, intervals.ts, chords.ts, chord-definitions.ts
 │   ├── tunings.ts, voicing-engine.ts, chord-identifier.ts
 │   ├── scales.ts, progressions.ts, triadRelationships.ts, audio.ts
-│   ├── pitchDetection.ts    # bounded YIN-style fundamental detection
+│   ├── pitchDetection.ts, pitchTracker.ts, tuner.ts  # pitch and tuning guidance
 │   ├── rhythm.ts            # beat offsets, timing feedback, silent-bar logic
 │   └── storage.ts           # local library and timestamped sync snapshots
 ├── components/              # Fretboard, chord charts, tuner, metronome, lesson labs
@@ -97,7 +97,17 @@ The shareable `/theory/triads/explore` route accepts root, quality, scale and in
 Its optional E/A CAGED examples apply only to major chords in standard six-string tuning; they are
 an introduction, not a complete map. Scale containment is shown as a note relationship rather than
 a promise that scales are interchangeable in every musical context. The two-key application
-challenge saves separately from the lesson checks using the existing local library/sync snapshot.
+challenge offers optional root-finding and semitone-counting guidance, then resets the guide for a
+second key and string. It saves separately from lesson checks using the existing local library/sync
+snapshot. The exercise can extend the displayed fret range to make its root-to-third path reachable
+above a high capo.
+
+The metronome clicks each notated denominator note: quarter notes in /4 and eighth notes in /8.
+BPM is the click rate, so 6/8 at 120 BPM means 120 eighth-note clicks per minute, grouped 3+3;
+12/8 uses 3+3+3+3. Eighth-note meters allow up to 480 clicks per minute; the interface also shows
+the equivalent dotted-quarter rate for 6/8 and 12/8. The 7/8 grouping is selectable (2+2+3, 2+3+2
+or 3+2+2). Bar downbeats and
+secondary group starts have distinct accents; disappearing mode mutes complete bars in each meter.
 
 ## Audio and asset credits
 
@@ -114,10 +124,21 @@ The frontend builds to static files and can be deployed to Netlify, Vercel, or a
 Configure an SPA fallback to `index.html`; `public/_redirects` provides it for Netlify. Node 22 is
 specified for compatible builds. A Supabase project is only needed for the optional account feature.
 
-- The chord vocabulary is extensive but not exhaustive. Extended voicings may omit explicitly
-  declared tones; the identifier labels partial matches.
+- The chord vocabulary is extensive but not exhaustive. The fretboard finder reports exact
+  pitch-class matches, labels omitted tones in partial matches, and distinguishes a non-chord slash
+  bass from an inversion. It considers an unplayed root only when the player chooses the optional
+  root hint, including for two-note third-and-seventh shells. Rootless voicings and shared note
+  sets are interpretations, not proof of harmonic function. The specific So What voicing requires
+  its actual ascending registers (e.g. D–G–C–F–A),
+  not merely the same pitch classes. Chord-reference links retain the bass, tuning and capo but
+  generate their own fingerings; they are not a copy of the selected fingering.
 - The tuner estimates pitch and can be affected by noise, string harmonics and microphone quality.
-  Tune one string at a time and check the target note and octave before turning a peg.
+  Auto mode compares against the selected tuning's nearest open string; chromatic mode compares
+  against the nearest semitone. Select the string manually if it is far out of tune, verify the
+  target and octave, and turn the peg in small steps. Reference playback pauses pitch feedback so
+  the speaker sound is not mistaken for the guitar. The target-based approach was informed by the
+  archived [Google Guitar Tuner](https://github.com/googlearchive/guitar-tuner); the implementation
+  here is independent.
 - The timing coach estimates individual note attacks against the beat. Device/browser audio latency,
   speaker bleed and noisy rooms affect results; use headphones and calibrate. It does not record or
   judge the musicality of a performance. Background-tab throttling can affect metronome scheduling.

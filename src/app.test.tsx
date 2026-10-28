@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
@@ -27,6 +27,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
 });
+afterEach(() => vi.useRealTimers());
 
 describe('application routing and rendering', () => {
   it('renders the home page with destinations and playable chord references', () => {
@@ -60,6 +61,24 @@ describe('application routing and rendering', () => {
     expect(screen.getByText(/1\s+3\s+5\s+b7/)).toBeTruthy();
     // Engine produced playable diagrams with strum buttons.
     expect(screen.getAllByRole('button', { name: /Strum/ }).length).toBeGreaterThan(0);
+  });
+
+  it('labels each generated inversion by its actual, interval-spelled bass', () => {
+    renderAt('/chords/C/minor');
+    const bass = screen.getByLabelText('Bass note');
+    expect(bass).toHaveDisplayValue('Any bass (root preferred)');
+    expect(screen.getByText('Bass: varies')).toBeInTheDocument();
+    expect(screen.getByText(/Finger numbers and playability labels are estimates/)).toBeInTheDocument();
+    fireEvent.change(bass, { target: { value: '3' } });
+    expect(screen.getByText('Bass: Eb')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Cm');
+    expect(bass).toHaveDisplayValue('Eb (b3) — Cm/Eb');
+    const diagrams = screen.getAllByRole('img', { name: /^Cm\/Eb, fret positions/ });
+    expect(diagrams.length).toBeGreaterThan(0);
+    expect(screen.queryByRole('img', { name: /^Cm\/D#/ })).not.toBeInTheDocument();
+    fireEvent.change(bass, { target: { value: '0' } });
+    expect(bass).toHaveDisplayValue('Root position (C)');
+    expect(screen.getAllByRole('img', { name: /^Cm, fret positions/ }).length).toBeGreaterThan(0);
   });
 
   it('decodes sharp roots from URLs (C# minor)', () => {
@@ -100,9 +119,26 @@ describe('application routing and rendering', () => {
     expect(screen.getByRole('link', { name: /G.*Major.*Exact/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Strum selection/ }));
     expect(strum).toHaveBeenCalledWith([43, 47, 50, 55, 59, 67]);
+    fireEvent.click(screen.getByRole('button', { name: /Arpeggiate selection/ }));
+    expect(playSequence).toHaveBeenCalledWith([43, 47, 50, 55, 59, 67], 0.35, 1.4);
     fireEvent.click(lowG);
     expect(lowG).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByText('5 / 6 strings')).toBeTruthy();
+  });
+
+  it('arpeggiates selected strings in string order with alternate tuning and capo', () => {
+    renderAt('/fretboard');
+    const arpeggiate = screen.getByRole('button', { name: /Arpeggiate selection/ });
+    expect(arpeggiate).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'drop-d' } });
+    fireEvent.change(screen.getByLabelText('Capo'), { target: { value: '2' } });
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 3, note F3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /D2 string open, capo fret 2, note E2/ }));
+    fireEvent.click(arpeggiate);
+    expect(playSequence).toHaveBeenCalledWith([40, 53], 0.35, 1.4);
+    fireEvent.click(screen.getByRole('button', { name: /^Clear$/ }));
+    expect(arpeggiate).toBeDisabled();
   });
 
   it('ranks chord matches using the lowest sounding pitch, not just string order', () => {
@@ -143,7 +179,7 @@ describe('application routing and rendering', () => {
     fireEvent.click(within(board).getByRole('button', { name: /String 6, fret 9, note Db3/ }));
     fireEvent.click(within(board).getByRole('button', { name: /String 5, fret 8, note F3/ }));
     fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 6, note Ab3/ }));
-    expect(screen.getByRole('link', { name: /Db.*Major.*Exact/ })).toHaveAttribute('href', '/chords/Db/major');
+    expect(screen.getByRole('link', { name: /Db.*Major.*Exact/ })).toHaveAttribute('href', '/chords/Db/major?bass=Db');
     fireEvent.click(screen.getByRole('button', { name: /^Clear$/ }));
     fireEvent.click(within(board).getByRole('button', { name: /String 6, fret 11, note Eb3/ }));
     fireEvent.click(within(board).getByRole('button', { name: /String 5, fret 10, note G3/ }));
@@ -154,6 +190,199 @@ describe('application routing and rendering', () => {
     fireEvent.change(screen.getByLabelText('Root'), { target: { value: 'C#' } });
     expect(screen.getByRole('heading', { name: /Db Major/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: /Open in scale library/ })).toHaveAttribute('href', '/scales/major?root=Db');
+  });
+
+  it('retains a root-position bass rather than opening an unrestricted reference', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /String 5, fret 3, note C3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 2, note E3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /G3 string open/ }));
+    const match = screen.getByRole('link', { name: /^C Major.*Exact/ });
+    expect(match).toHaveAttribute('href', '/chords/C/major?bass=C');
+    fireEvent.click(match);
+    expect(screen.getByLabelText('Bass note')).toHaveDisplayValue('Root position (C)');
+    expect(screen.getByText('Bass: C')).toBeInTheDocument();
+  });
+
+  it('keeps interval-correct chord names even when the workbench prefers sharps', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /String 6, fret 11, note D#3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 5, fret 10, note G3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 10, note C4/ }));
+    const inversion = screen.getByRole('link', { name: /Cm\/Eb.*Minor.*Exact/ });
+    expect(inversion).toHaveTextContent(/C\s*·\s*Eb\s*·\s*G/);
+    expect(inversion).toHaveAttribute('title', expect.stringContaining('Bass note Eb'));
+    expect(inversion).toHaveAttribute('href', '/chords/C/minor?bass=Eb');
+    fireEvent.click(inversion);
+    expect(screen.getByLabelText('Bass note')).toHaveDisplayValue('Eb (b3) — Cm/Eb');
+    expect(screen.getByText(/Showing Cm\/Eb voicings with Eb in the bass/)).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: /^Cm\/Eb, fret positions/ }).length).toBeGreaterThan(0);
+  });
+
+  it('identifies suspended ninths and explains omitted notes in the actual guitar selection', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const label of [/String 5, fret 3, note C3/, /String 4, fret 3, note F3/, /String 3, fret 3, note A#3/, /String 2, fret 3, note D4/, /String 1, fret 3, note G4/]) {
+      fireEvent.click(within(board).getByRole('button', { name: label }));
+    }
+    expect(screen.getByRole('link', { name: /C9sus4.*Dominant ninth suspended fourth.*Exact/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /A#6\/9\/B#.*Also spelled Bb6\/9\/C.*Exact/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Gm7\/C.*non-chord bass.*Slash bass/ })).toHaveAttribute('href', '/chords/G/minor-7?bass=C');
+    expect(screen.queryByRole('link', { name: /Cso-what/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Clear$/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 5, fret 3, note C3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 2, note E3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 3, fret 3, note A#3/ }));
+    expect(screen.getByRole('link', { name: /C7.*Not played: G \(5\).*Partial/ })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /C7alt/ })).not.toBeInTheDocument();
+  });
+
+  it('offers rootless names only when a root is explicitly chosen', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const label of [/String 4, fret 2, note E3/, /G3 string open/, /String 2, fret 3, note D4/, /String 1, fret 6, note A#4/]) {
+      fireEvent.click(within(board).getByRole('button', { name: label }));
+    }
+    expect(screen.queryByRole('link', { name: /C9\/E/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Root hint (optional)'), { target: { value: '0' } });
+    const rootless = screen.getByRole('link', { name: /C9\/E.*Root C assumed, not played.*Partial/ });
+    expect(rootless).toHaveAttribute('href', '/chords/C/dominant-9?bass=E');
+    fireEvent.change(screen.getByLabelText('Root hint (optional)'), { target: { value: '' } });
+    expect(screen.queryByRole('link', { name: /C9\/E/ })).not.toBeInTheDocument();
+  });
+
+  it('offers a third-and-seventh shell when its absent root is explicitly chosen', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 2, note E3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 3, fret 3, note A#3/ }));
+    expect(screen.queryByRole('link', { name: /C7\/E/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Root hint (optional)'), { target: { value: '0' } });
+    expect(screen.getByRole('link', { name: /C7\/E.*Root C assumed, not played.*Not played: G \(5\).*Partial/ })).toBeInTheDocument();
+  });
+
+  it('uses note register as well as pitch classes for the So What voicing', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const label of [/String 5, fret 5, note D3/, /String 4, fret 5, note G3/, /String 3, fret 5, note C4/, /String 2, fret 6, note F4/, /String 1, fret 5, note A4/]) {
+      fireEvent.click(within(board).getByRole('button', { name: label }));
+    }
+    expect(screen.getByRole('link', { name: /Dso-what.*So What chord.*Exact/ })).toBeInTheDocument();
+    fireEvent.click(within(board).getByRole('button', { name: /String 4, fret 3, note F3/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /G3 string open/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 1, note C4/ }));
+    expect(screen.queryByRole('link', { name: /Dso-what/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Dm11.*Not played: E \(9\).*Partial/ })).toBeInTheDocument();
+  });
+
+  it('retains a non-chord slash bass when opening the chord reference and returning to the fretboard', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const label of [/String 6, fret 8, note C3/, /String 5, fret 5, note D3/, /String 4, fret 4, note F#3/, /String 3, fret 2, note A3/]) {
+      fireEvent.click(within(board).getByRole('button', { name: label }));
+    }
+    const slash = screen.getByRole('link', { name: /D\/C.*non-chord bass.*Slash bass/ });
+    expect(slash).toHaveAttribute('href', '/chords/D/major?bass=C');
+    fireEvent.click(slash);
+    expect(screen.getByLabelText('Bass note')).toHaveDisplayValue('C (non-chord bass) — D/C');
+    expect(screen.getByText('Bass: C')).toBeInTheDocument();
+    expect(screen.getByText(/Showing D\/C voicings with C in the bass \(a non-chord bass, not an inversion\)/)).toBeInTheDocument();
+    expect(screen.getAllByRole('img', { name: /^D\/C, fret positions/ }).length).toBeGreaterThan(0);
+    const open = screen.getByRole('link', { name: 'Open on fretboard' });
+    expect(open).toHaveAttribute('href', '/fretboard?chord=D%7Cmajor&bass=C');
+    fireEvent.click(open);
+    expect(screen.getByRole('link', { name: /D\/C.*non-chord bass.*Slash bass/ })).toBeInTheDocument();
+  });
+
+  it('keeps alternate tuning, capo and bass across the chord-reference round trip', () => {
+    renderAt('/fretboard');
+    fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'drop-d' } });
+    fireEvent.change(screen.getByLabelText('Capo'), { target: { value: '2' } });
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const label of [
+      /D2 string open, capo fret 2, note E2/,
+      /A2 string open, capo fret 2, note B2/,
+      /G3 string open, capo fret 2, note A3/,
+      /B3 string open, capo fret 2, note C#4/,
+      /E4 string open, capo fret 2, note F#4/,
+    ]) fireEvent.click(within(board).getByRole('button', { name: label }));
+    const match = screen.getByRole('link', { name: /A6\/9\/E.*Exact/ });
+    expect(match).toHaveAttribute('href', '/chords/A/six-nine?bass=E&tuning=drop-d&capo=2');
+    fireEvent.click(match);
+    expect(screen.getByLabelText('Tuning')).toHaveValue('drop-d');
+    expect(screen.getByLabelText('Capo')).toHaveValue('2');
+    expect(screen.getByText('Bass: E')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'A' })).toHaveAttribute('href', '/chords/A/major?tuning=drop-d&capo=2');
+    const back = screen.getByRole('link', { name: 'Open on fretboard' });
+    expect(back).toHaveAttribute('href', '/fretboard?chord=A%7Csix-nine&bass=E&tuning=drop-d&capo=2');
+    fireEvent.click(back);
+    expect(screen.getByLabelText('Tuning')).toHaveValue('drop-d');
+    expect(screen.getByLabelText('Capo')).toHaveValue('2');
+    expect(screen.getByRole('link', { name: /A6\/9\/E.*Exact/ })).toBeInTheDocument();
+  });
+
+  it('validates shared instrument settings and supports the full capo range', () => {
+    const view = renderAt('/chords/C/major?tuning=not-a-tuning&capo=99');
+    expect(screen.getByLabelText('Tuning')).toHaveValue('standard');
+    expect(screen.getByLabelText('Capo')).toHaveValue('0');
+    view.unmount();
+    renderAt('/chords/C/major?tuning=drop-d&capo=7');
+    expect(screen.getByLabelText('Tuning')).toHaveValue('drop-d');
+    expect(screen.getByLabelText('Capo')).toHaveValue('7');
+    fireEvent.change(screen.getByLabelText('Fret window'), { target: { value: '18' } });
+    expect(screen.getByText(/Results stop at physical fret 24/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Open on fretboard' }));
+    expect(screen.getByLabelText('Tuning')).toHaveValue('drop-d');
+    expect(screen.getByLabelText('Capo')).toHaveValue('7');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    expect(within(board).getAllByRole('button', { pressed: true }).length).toBeGreaterThan(0);
+  });
+
+  it('explains when a requested reference voicing cannot be generated', () => {
+    renderAt('/fretboard?chord=D%7Cso-what&bass=C');
+    expect(screen.getByText(/No playable reference voicing was found/)).toBeInTheDocument();
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /E2 string open, note E2/ }));
+    expect(screen.queryByText(/No playable reference voicing was found/)).not.toBeInTheDocument();
+  });
+
+  it('opens an extended chord on the fretboard without dropping its defining alteration', () => {
+    renderAt('/fretboard?chord=C%7Cdominant-alt');
+    const selection = screen.getByRole('heading', { name: 'Selection' }).closest('section')!;
+    const names = [...selection.querySelectorAll('.note-chip')].map((chip) => chip.textContent);
+    for (const required of ['C', 'E', 'A#']) expect(names).toContain(required);
+    expect(names.some((name) => ['C#', 'D#', 'F#', 'G#'].includes(name ?? ''))).toBe(true);
+    expect(screen.getByRole('link', { name: /C7alt.*Partial/ })).toBeInTheDocument();
+  });
+
+  it('distinguishes octave doublings from different chord tones', () => {
+    renderAt('/fretboard');
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    fireEvent.click(within(board).getByRole('button', { name: /E2 string open, note E2/ }));
+    fireEvent.click(within(board).getByRole('button', { name: /E4 string open, note E4/ }));
+    expect(screen.getByText('One note, possibly in different octaves')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /E5.*Exact/ })).not.toBeInTheDocument();
+    fireEvent.click(within(board).getByRole('button', { name: /B3 string open, note B3/ }));
+    expect(screen.getByRole('link', { name: /E5.*Power chord.*Exact/ })).toBeInTheDocument();
+  });
+
+  it('identifies sounding notes and omissions above a capo', () => {
+    renderAt('/fretboard');
+    fireEvent.change(screen.getByLabelText('Capo'), { target: { value: '2' } });
+    const board = screen.getByRole('group', { name: /Interactive guitar fretboard/ });
+    for (const label of [/E2 string open, capo fret 2, note F#2/, /A2 string open, capo fret 2, note B2/, /D3 string open, capo fret 2, note E3/, /G3 string open, capo fret 2, note A3/, /B3 string open, capo fret 2, note C#4/]) {
+      fireEvent.click(within(board).getByRole('button', { name: label }));
+    }
+    expect(screen.getByRole('link', { name: /F#m11.*Not played: G# \(9\).*Partial/ })).toBeInTheDocument();
+  });
+
+  it('preserves a chosen flat spelling for a non-chord slash bass', () => {
+    renderAt('/chords/C/major?bass=Db');
+    expect(screen.getByLabelText('Bass note')).toHaveDisplayValue('Db (non-chord bass) — C/Db');
+    expect(screen.getByText(/Showing C\/Db voicings with Db in the bass/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open on fretboard' })).toHaveAttribute('href', '/fretboard?chord=C%7Cmajor&bass=Db');
   });
 
   it('maps a minor-scale triad and auditions notes in scale mode', () => {
@@ -193,6 +422,13 @@ describe('application routing and rendering', () => {
     expect(playSequence).toHaveBeenCalledWith([62, 64, 65, 67, 69, 71, 72, 74], 0.32, 0.7);
   });
 
+  it('shows the actual scale spelling on F# major neck markers', () => {
+    renderAt('/scales/major?root=F%23');
+    const board = screen.getByRole('img', { name: 'F# Major (Ionian) scale pattern across 12 frets' });
+    expect([...board.querySelectorAll('.fb-note')].some((marker) => marker.textContent === 'E#')).toBe(true);
+    expect(screen.getByLabelText('Notes in F# Major (Ionian)')).toHaveTextContent('E#');
+  });
+
   it('renders the progression explorer with diatonic table', () => {
     renderAt('/progressions');
     expect(screen.getByText(/Diatonic chords of C major/)).toBeTruthy();
@@ -200,6 +436,15 @@ describe('application routing and rendering', () => {
     expect(screen.getAllByText('vii°').length).toBeGreaterThan(0);
     // I–V–vi–IV in C resolves to C G Am F
     expect(screen.getAllByText(/C/).length).toBeGreaterThan(0);
+  });
+
+  it('uses written scale degrees consistently for progression chords and links', () => {
+    renderAt('/progressions');
+    fireEvent.change(screen.getByLabelText('Key'), { target: { value: 'F#' } });
+    const table = screen.getByRole('table');
+    const seventhDegree = within(table).getAllByRole('row')[7];
+    expect(within(seventhDegree).getByRole('link', { name: 'E#dim' })).toHaveAttribute('href', '/chords/E%23/diminished');
+    expect(within(seventhDegree).getByRole('link', { name: /E#m/ })).toHaveAttribute('href', '/chords/E%23/half-diminished');
   });
 
   it('renders the practice tools and quiz flow', () => {
@@ -229,6 +474,42 @@ describe('application routing and rendering', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('uses meter-specific click units, group accents and disappearing bars', () => {
+    vi.useFakeTimers();
+    renderAt('/metronome');
+    fireEvent.change(screen.getByLabelText('Time signature'), { target: { value: '6/8' } });
+    expect(screen.getByRole('group', { name: '6/8, 6 eighth-note clicks per bar' })).toBeInTheDocument();
+    expect(screen.getByText(/grouped 3\+3 \(two dotted-quarter beats\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start metronome' }));
+    act(() => { vi.advanceTimersByTime(2100); });
+    expect(vi.mocked(playClick).mock.calls.slice(0, 4).map(([accent]) => accent)).toEqual([true, false, false, 'group']);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    fireEvent.change(screen.getByLabelText('Time signature'), { target: { value: '7/8' } });
+    fireEvent.change(screen.getByLabelText('7/8 grouping'), { target: { value: '3+2+2' } });
+    expect(screen.getByText(/grouped 3\+2\+2/)).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '7/8, 7 eighth-note clicks per bar' }).querySelectorAll('.is-group-start')).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText('Time signature'), { target: { value: '12/8' } });
+    expect(screen.getByText(/four dotted-quarter beats/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Disappearing' }));
+    fireEvent.change(screen.getByLabelText('Tempo in clicks per minute'), { target: { value: '240' } });
+    vi.mocked(playClick).mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Start metronome' }));
+    act(() => { vi.advanceTimersByTime(3200); });
+    expect(playClick).toHaveBeenCalledTimes(12);
+    expect(screen.getByText('Silent bar · keep playing')).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(3100); });
+    expect(vi.mocked(playClick).mock.calls.length).toBeGreaterThan(12);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    const tempo = screen.getByLabelText('Tempo in clicks per minute');
+    expect(tempo).toHaveAttribute('max', '480');
+    fireEvent.change(tempo, { target: { value: '360' } });
+    expect(tempo).toHaveValue('360'); // 120 dotted-quarter beats per minute in 12/8.
+    fireEvent.change(screen.getByLabelText('Time signature'), { target: { value: '4/4' } });
+    expect(tempo).toHaveAttribute('max', '240');
+    expect(tempo).toHaveValue('240');
+    vi.useRealTimers();
   });
 
   it('stops a microphone stream if permission resolves after leaving the tuner', async () => {

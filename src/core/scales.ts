@@ -3,7 +3,7 @@
  * Like chords, scales are interval formulas applied to any root at runtime.
  */
 
-import { normalizePc, noteToPc, pcToNote, NoteName } from './notes';
+import { normalizePc, normalizeNoteName, noteToPc, pcToNote, NoteName } from './notes';
 import { intervalSemitones, getInterval, spellInterval } from './intervals';
 
 export type ScaleCategory = 'major' | 'minor' | 'mode' | 'pentatonic' | 'blues' | 'symmetrical';
@@ -145,7 +145,7 @@ export function buildScale(root: NoteName | number, scaleId: string): ScaleNote[
   const type = SCALE_TYPES.find((s) => s.id === scaleId);
   if (!type) throw new Error(`Unknown scale: "${scaleId}"`);
   const rootPc = typeof root === 'number' ? normalizePc(root) : noteToPc(root);
-  const rootName = pcToNote(rootPc, typeof root === 'string' && root.includes('b'));
+  const rootName = typeof root === 'string' ? normalizeNoteName(root) : pcToNote(rootPc);
   return type.intervals.map((symbol) => {
     const def = getInterval(symbol);
     const pc = normalizePc(rootPc + intervalSemitones(symbol));
@@ -165,7 +165,7 @@ export function buildScale(root: NoteName | number, scaleId: string): ScaleNote[
  */
 export function buildArpeggio(root: NoteName | number, intervalSymbols: string[]): ScaleNote[] {
   const rootPc = typeof root === 'number' ? normalizePc(root) : noteToPc(root);
-  const rootName = pcToNote(rootPc, typeof root === 'string' && root.includes('b'));
+  const rootName = typeof root === 'string' ? normalizeNoteName(root) : pcToNote(rootPc);
   const notes: ScaleNote[] = [];
   for (const symbol of intervalSymbols) {
     const def = getInterval(symbol);

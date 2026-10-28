@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAudioContext, isAudioSupported, playClick } from '@core/audio';
-import { beatOffsetMs, describeTiming, isAudibleBeat } from '@core/rhythm';
+import { beatOffsetMs, clickAccent, describeTiming, isAudibleBeat, SEVEN_EIGHT_GROUPINGS, TIME_SIGNATURES } from '@core/rhythm';
 import { useAudioInput } from '@/hooks/useAudioInput';
 
 type Mode = 'steady' | 'coach' | 'disappearing';
 const MODES: { id: Mode; label: string; description: string }[] = [
   { id: 'steady', label: 'Steady', description: 'A clear, even pulse with beat one accented.' },
-  { id: 'coach', label: 'Timing coach', description: 'Listen to one note per beat and see how your timing compares.' },
+  { id: 'coach', label: 'Timing coach', description: 'Listen to one note per click and see how your timing compares.' },
   { id: 'disappearing', label: 'Disappearing', description: 'The click drops out, then returns. Keep the beat while it is silent.' },
 ];
 
 export default function Metronome() {
   const [bpm, setBpm] = useState(90);
-  const [beats, setBeats] = useState(4);
+  const [meterId, setMeterId] = useState('4/4');
+  const [sevenGrouping, setSevenGrouping] = useState('2+2+3');
+  const meter = TIME_SIGNATURES.find((item) => item.id === meterId)!;
+  const groups = meterId === '7/8' ? SEVEN_EIGHT_GROUPINGS.find((item) => item.join('+') === sevenGrouping)! : meter.groups;
+  const beats = meter.numerator;
+  // Eighth-note clicks need a wider range to cover practical dotted-quarter tempos.
+  const maxBpm = meter.denominator === 8 ? 480 : 240;
   const [mode, setMode] = useState<Mode>('steady');
   const [audibleBars, setAudibleBars] = useState(1);
   const [silentBars, setSilentBars] = useState(1);
@@ -52,7 +58,7 @@ export default function Metronome() {
         const beat = index % beats;
         const audible = mode !== 'disappearing' || isAudibleBeat(index, beats, audibleBars, silentBars);
         if (audible) {
-          const click = playClick(beat === 0, nextTime);
+          const click = playClick(clickAccent(beat, meter, groups), nextTime);
           if (click) { clicks.add(click); click.onended = () => clicks.delete(click); }
         }
         const delay = Math.max(0, (nextTime - audio.currentTime) * 1000);
@@ -73,9 +79,9 @@ export default function Metronome() {
       visuals.forEach((id) => window.clearTimeout(id));
       clicks.forEach((click) => { try { click.stop(audio.currentTime); } catch { /* Already ended. */ } });
     };
-  }, [running, bpm, beats, mode, audibleBars, silentBars]);
+  }, [running, bpm, meter, groups, beats, mode, audibleBars, silentBars]);
 
-  useEffect(() => { setOffsets([]); calibration.current = null; setCalibrationCount(null); }, [bpm, beats, mode]);
+  useEffect(() => { setOffsets([]); calibration.current = null; setCalibrationCount(null); setCurrentBeat(0); }, [bpm, meterId, sevenGrouping, mode]);
   useEffect(() => { setOffsets([]); }, [latencyMs]);
   useEffect(() => {
     if (mode !== 'coach' && (microphone.input || microphone.status === 'requesting')) microphone.stop();
@@ -165,7 +171,7 @@ export default function Metronome() {
     taps.current = [...recent, now].slice(-5);
     if (taps.current.length >= 2) {
       const span = taps.current[taps.current.length - 1] - taps.current[0];
-      setBpm(Math.max(40, Math.min(240, Math.round(60000 * (taps.current.length - 1) / span))));
+      setBpm(Math.max(40, Math.min(maxBpm, Math.round(60000 * (taps.current.length - 1) / span))));
     }
   };
   const latest = offsets[offsets.length - 1];
@@ -178,6 +184,21 @@ export default function Metronome() {
     inconsistent: 'Timing is inconsistent',
   }[result.summary];
   const beatLabel = latest === undefined ? 'Waiting for a note' : Math.abs(latest) <= 22 ? 'On the beat' : `${Math.round(Math.abs(latest))} ms ${latest < 0 ? 'ahead' : 'behind'}`;
+  const visualPulses = Array.from({ length: beats }, (_, i) => {
+    const accent = clickAccent(i, meter, groups);
+    return <span key={i} className={`metronome-beat ${accent === true ? 'is-downbeat' : accent === 'group' ? 'is-group-start' : ''} ${running && !silent && currentBeat === i ? 'is-active' : ''}`} aria-hidden="true">{i + 1}</span>;
+  });
+  const compoundBeats = meter.id === '6/8' ? ' (two dotted-quarter beats)' : meter.id === '12/8' ? ' (four dotted-quarter beats)' : '';
+  const compoundRate = compoundBeats ? ` (${Math.round(bpm / 3 * 10) / 10} dotted-quarter beats per minute)` : '';
+  const meterDescription = meter.denominator === 8
+    ? `${meter.id} has ${beats} eighth-note clicks grouped ${groups.join('+')}${compoundBeats}. BPM counts eighth-note clicks${compoundRate}. The first click is strongest; group starts have a lighter accent.`
+    : `${beats} quarter-note clicks per bar. BPM counts quarter notes; the first click is accented.`;
+  const changeMeter = (id: string) => {
+    const next = TIME_SIGNATURES.find((item) => item.id === id);
+    if (!next) return;
+    setMeterId(next.id);
+    setBpm((value) => Math.min(value, next.denominator === 8 ? 480 : 240));
+  };
 
   return (
     <div className="metronome-shell">
@@ -187,23 +208,28 @@ export default function Metronome() {
       <p className="metronome-description">{MODES.find((item) => item.id === mode)?.description}</p>
       <div className="metronome-tempo">
         <button type="button" className="tempo-adjust" aria-label="Decrease tempo" onClick={() => setBpm((value) => Math.max(40, value - 1))}>−</button>
-        <div><span className="tempo-number">{bpm}</span><span className="tempo-unit">BPM</span></div>
-        <button type="button" className="tempo-adjust" aria-label="Increase tempo" onClick={() => setBpm((value) => Math.min(240, value + 1))}>+</button>
+        <div><span className="tempo-number">{bpm}</span><span className="tempo-unit">BPM · {meter.denominator === 8 ? 'eighth-note' : 'quarter-note'} clicks</span></div>
+        <button type="button" className="tempo-adjust" aria-label="Increase tempo" onClick={() => setBpm((value) => Math.min(maxBpm, value + 1))}>+</button>
       </div>
-      <div className="tempo-range"><label className="sr-only" htmlFor="metronome-bpm">Tempo in beats per minute</label><input id="metronome-bpm" type="range" min="40" max="240" value={bpm} onChange={(event) => setBpm(Number(event.target.value))} /><div><span>40</span><span>240</span></div></div>
-      <div className="metronome-beats" role="group" aria-label={`${beats} beats per bar`}>
-        {Array.from({ length: beats }, (_, i) => <span key={i} className={`metronome-beat ${running && !silent && currentBeat === i ? 'is-active' : ''}`} aria-hidden="true">{i + 1}</span>)}
+      <div className="tempo-range"><label className="sr-only" htmlFor="metronome-bpm">Tempo in clicks per minute</label><input id="metronome-bpm" type="range" min="40" max={maxBpm} value={bpm} onChange={(event) => setBpm(Number(event.target.value))} /><div><span>40</span><span>{maxBpm}</span></div></div>
+      <div className="metronome-beats" role="group" aria-label={`${meter.id}, ${beats} ${meter.denominator === 8 ? 'eighth-note clicks' : 'quarter-note beats'} per bar`} aria-describedby="metronome-meter-note">
+        {meter.denominator === 8 ? groups.map((length, index) => {
+          const start = groups.slice(0, index).reduce((sum, group) => sum + group, 0);
+          return <span className="metronome-pulse-group" key={start}>{visualPulses.slice(start, start + length)}</span>;
+        }) : visualPulses}
       </div>
+      <p id="metronome-meter-note" className="metronome-meter-note">{meterDescription}</p>
       <p className="metronome-phase" aria-live="polite">{running && mode === 'disappearing' ? (silent ? 'Silent bar · keep playing' : 'Click is playing') : '\u00a0'}</p>
       <div className="metronome-actions"><button type="button" className="btn btn-primary metronome-start" onClick={running ? stop : start}>{running ? 'Stop' : 'Start metronome'}</button><button type="button" className="btn" onClick={tap}>Tap tempo</button></div>
       <div className="metronome-settings">
-        <div className="field"><label htmlFor="metronome-beats">Beats per bar</label><select id="metronome-beats" value={beats} onChange={(event) => setBeats(Number(event.target.value))}>{[2, 3, 4, 5, 6, 7].map((value) => <option key={value} value={value}>{value}/4</option>)}</select></div>
+        <div className="field"><label htmlFor="metronome-beats">Time signature</label><select id="metronome-beats" value={meterId} onChange={(event) => changeMeter(event.target.value)}>{TIME_SIGNATURES.map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}</select></div>
+        {meterId === '7/8' && <div className="field"><label htmlFor="seven-grouping">7/8 grouping</label><select id="seven-grouping" value={sevenGrouping} onChange={(event) => setSevenGrouping(event.target.value)}>{SEVEN_EIGHT_GROUPINGS.map((group) => <option key={group.join('+')} value={group.join('+')}>{group.join('+')}</option>)}</select></div>}
         {mode === 'disappearing' && <><div className="field"><label htmlFor="audible-bars">Audible bars</label><select id="audible-bars" value={audibleBars} onChange={(event) => setAudibleBars(Number(event.target.value))}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</select></div><div className="field"><label htmlFor="silent-bars">Silent bars</label><select id="silent-bars" value={silentBars} onChange={(event) => setSilentBars(Number(event.target.value))}>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</select></div></>}
       </div>
       {mode === 'coach' && <div className="timing-coach">
         <div className="timing-coach-heading"><div><p className="eyebrow">LISTEN & COMPARE</p><h3>Your timing</h3></div>{microphone.status === 'listening' ? <button type="button" className="btn btn-sm" onClick={() => { calibration.current = null; setCalibrationCount(null); microphone.stop(); }}>Stop listening</button> : <button type="button" className="btn btn-sm" onClick={() => { void microphone.start(); }} disabled={microphone.status === 'requesting' || microphone.status === 'unsupported'}>{microphone.status === 'requesting' ? 'Requesting microphone…' : 'Enable microphone'}</button>}</div>
         <div className="timing-feedback"><div><small>LATEST NOTE</small><strong>{beatLabel}</strong></div><div><small>RECENT PATTERN</small><strong>{summary}</strong></div></div>
-        <p className="small muted">Use headphones so the click is not mistaken for your guitar. Play one clear note on each beat. Feedback is an estimate and depends on microphone latency; audio stays on this device.</p>
+        <p className="small muted">Use headphones so the click is not mistaken for your guitar. Play one clear note on each click (each eighth note in /8). Feedback is an estimate and depends on microphone latency; audio stays on this device.</p>
         <div className="timing-calibration"><button type="button" className="btn btn-sm" disabled={!running || microphone.status !== 'listening' || !detectorReady || !!detectorError} onClick={() => { if (calibrationCount !== null) { calibration.current = null; setCalibrationCount(null); setCalibrationMessage('Calibration cancelled.'); } else { calibration.current = []; setCalibrationCount(0); setCalibrationMessage('Play one clear note exactly with each of the next four clicks.'); } }}>{calibrationCount !== null ? 'Cancel calibration' : 'Calibrate device delay'}</button><span className="small muted" role="status">{calibrationCount !== null ? `${calibrationMessage} (${calibrationCount}/4)` : calibrationMessage || 'Start the click and microphone, then calibrate if timing seems delayed.'}</span></div>
         <details className="timing-latency"><summary>Adjust latency manually</summary><label htmlFor="timing-latency">Subtract input delay: {latencyMs} ms</label><input id="timing-latency" type="range" min="0" max="150" step="1" value={latencyMs} onChange={(event) => setLatencyMs(Number(event.target.value))} /><p className="small faint">Calibration estimates the delay from your playing; you can refine it here. Zero is the default.</p></details>
         {microphone.status === 'denied' && <p className="small tuner-error" role="alert">Microphone permission denied. Enable access in your browser settings.</p>}

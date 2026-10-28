@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   noteToPc, pcToNote, normalizePc, transposeNote, transposePc,
   enharmonic, semitonesBetween, midiToFreq, pcOctaveToMidi, fretToMidi,
-  CYCLE_OF_FIFTHS,
+  CYCLE_OF_FIFTHS, normalizeNoteName,
 } from './notes';
 
 describe('pitch-class primitives', () => {
@@ -18,6 +18,13 @@ describe('pitch-class primitives', () => {
     expect(noteToPc('E#')).toBe(5);
     expect(noteToPc('Cb')).toBe(11);
     expect(noteToPc('Fb')).toBe(4); // F flat is enharmonic with E.
+  });
+
+  it('keeps uncommon written roots instead of replacing them with enharmonic pitch names', () => {
+    expect(normalizeNoteName(' cb ')).toBe('Cb');
+    expect(normalizeNoteName('e#')).toBe('E#');
+    expect(normalizeNoteName('f##')).toBe('F##');
+    expect(() => normalizeNoteName('H')).toThrow(/Unknown note/);
   });
 
   it('throws on garbage input', () => {

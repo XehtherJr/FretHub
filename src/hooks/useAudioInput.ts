@@ -5,11 +5,11 @@ export type MicrophoneStatus = 'idle' | 'requesting' | 'listening' | 'denied' | 
 export interface AudioInput { context: AudioContext; source: MediaStreamAudioSourceNode; analyser: AnalyserNode }
 
 /** Explicit, local-only microphone access with cleanup on stop/unmount. */
-export function useAudioInput() {
+export function useAudioInput(fftSize = 4096) {
   const [status, setStatus] = useState<MicrophoneStatus>('idle');
   const [input, setInput] = useState<AudioInput | null>(null);
   const requestRef = useRef(0);
-  const resources = useRef<{ stream: MediaStream; source: MediaStreamAudioSourceNode; analyser: AnalyserNode } | null>(null);
+  const resources = useRef<{ stream: MediaStream; source: MediaStreamAudioSourceNode; analyser: AnalyserNode; onEnded: () => void } | null>(null);
 
   const release = () => {
     requestRef.current++;
@@ -17,7 +17,7 @@ export function useAudioInput() {
     if (current) {
       current.source.disconnect();
       current.analyser.disconnect();
-      current.stream.getTracks().forEach((track) => track.stop());
+      current.stream.getTracks().forEach((track) => { track.removeEventListener('ended', current.onEnded); track.stop(); });
     }
     resources.current = null;
   };
@@ -32,11 +32,22 @@ export function useAudioInput() {
       const context = getAudioContext();
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       if (request !== requestRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      if (context.state !== 'running') await context.resume();
+      if (request !== requestRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      if (context.state !== 'running') throw new Error('Audio processing could not start.');
+      const tracks = stream.getTracks();
+      if (!tracks.length || tracks.some((track) => track.readyState === 'ended')) throw new Error('Microphone disconnected.');
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
-      analyser.fftSize = 4096;
+      analyser.fftSize = fftSize;
       source.connect(analyser);
-      resources.current = { stream, source, analyser };
+      const activeStream = stream;
+      const onEnded = () => {
+        if (resources.current?.stream !== activeStream) return;
+        release(); setInput(null); setStatus('unavailable');
+      };
+      tracks.forEach((track) => track.addEventListener('ended', onEnded));
+      resources.current = { stream, source, analyser, onEnded };
       setInput({ context, source, analyser });
       setStatus('listening');
     } catch (error) {

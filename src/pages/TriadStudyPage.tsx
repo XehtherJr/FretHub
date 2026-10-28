@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { buildChord, type BuiltChord } from '@core/chords';
 import { isAudioSupported, playMidi, playSequence, strum } from '@core/audio';
-import { intervalSemitones } from '@core/intervals';
-import { noteToPc, pcToNote, ROOT_NOTES, transposePc } from '@core/notes';
+import { intervalSemitones, spellInterval } from '@core/intervals';
+import { normalizeNoteName, noteToPc, pcToNote, ROOT_NOTES } from '@core/notes';
 import { buildScale } from '@core/scales';
 import { getTuning, TUNINGS } from '@core/tunings';
 import { changesFromMajor, isTriadQuality, neckPositions, sameRootScalesContaining, type NeckPosition, type TriadQuality } from '@core/triadRelationships';
@@ -13,7 +13,7 @@ import TriadTransferChallenge from '@/components/TriadTransferChallenge';
 import { chordPath, lessonPath, scalePath } from '@/lib/urls';
 
 const DEFAULT_SCALE: Record<TriadQuality, string> = { major: 'major', minor: 'natural-minor', diminished: 'locrian', augmented: 'whole-tone' };
-const ROOT_OPTIONS = [...new Set(ROOT_NOTES.flatMap((root) => [root, pcToNote(noteToPc(root), true)]))];
+const ROOT_OPTIONS = [...new Set([...ROOT_NOTES.flatMap((root) => [root, pcToNote(noteToPc(root), true)]), 'Cb', 'Fb', 'E#', 'B#'])];
 const FRET_OPTIONS = [12, 15, 22, 24];
 
 type BoardView = 'tones' | 'scale' | 'shape';
@@ -21,7 +21,7 @@ interface ShapeSelection { context: string; positions: NeckPosition[]; label: st
 
 function safeRoot(value: string | null): string {
   if (!value) return 'C';
-  try { return pcToNote(noteToPc(value), value.includes('b')); } catch { return 'C'; }
+  try { return normalizeNoteName(value); } catch { return 'C'; }
 }
 function chordMidi(chord: BuiltChord): number[] {
   const rootMidi = 60 + chord.rootPc;
@@ -45,6 +45,7 @@ export default function TriadStudyPage() {
 
   const chord = useMemo(() => buildChord(root, quality), [root, quality]);
   const comparison = useMemo(() => changesFromMajor(chord), [chord]);
+  const unusualSpellings = chord.tones.filter((tone) => tone.name !== pcToNote(tone.pc) && tone.name !== pcToNote(tone.pc, true));
   const possibleScales = useMemo(() => sameRootScalesContaining(chord), [chord]);
   const requestedScale = params.get('scale');
   const scaleId = possibleScales.some((scale) => scale.id === requestedScale) ? requestedScale! : DEFAULT_SCALE[quality];
@@ -100,7 +101,7 @@ export default function TriadStudyPage() {
   };
   const playedTone = lastNote && chord.tones.find((tone) => tone.pc === lastNote.pc);
   const playedScaleNote = lastNote && scaleNotes.find((tone) => tone.pc === lastNote.pc);
-  const nextRoot = pcToNote(transposePc(chord.rootPc, 5), root.includes('b'));
+  const nextRoot = spellInterval(chord.rootName, '4');
   const nextChord = buildChord(nextRoot, 'major');
 
   return <div className="page triad-study-page">
@@ -109,12 +110,13 @@ export default function TriadStudyPage() {
 
     <section className="triad-foundation" aria-labelledby="foundation-heading">
       <div className="triad-foundation-copy"><p className="eyebrow">01 / BUILD THE SOUND</p><h2 id="foundation-heading">Start with a chord</h2><p>A triad is a chord built from three note types, or pitch classes: a <strong>root</strong> (its name), a <strong>third</strong> and a <strong>fifth</strong>. Each can appear on several strings and in different octaves. Play the chord tones one at a time and you have an <strong>arpeggio</strong>.</p>
-        <div className="triad-pickers"><div className="field"><label htmlFor="study-root">Root note</label><select id="study-root" value={root} onChange={(event) => { update({ root: event.target.value }); setLastNote(null); }}>{ROOT_OPTIONS.map((name) => <option value={name} key={name}>{name}</option>)}</select></div><div className="field"><label htmlFor="study-quality">Chord quality</label><select id="study-quality" value={quality} onChange={(event) => { update({ quality: event.target.value }); setLastNote(null); }}><option value="major">Major</option><option value="minor">Minor</option><option value="diminished">Diminished</option><option value="augmented">Augmented</option></select></div></div>
+        <div className="triad-pickers"><div className="field"><label htmlFor="study-root">Root note</label><select id="study-root" value={root} onChange={(event) => { update({ root: event.target.value }); setLastNote(null); }}>{!ROOT_OPTIONS.includes(root) && <option value={root}>{root}</option>}{ROOT_OPTIONS.map((name) => <option value={name} key={name}>{name}</option>)}</select></div><div className="field"><label htmlFor="study-quality">Chord quality</label><select id="study-quality" value={quality} onChange={(event) => { update({ quality: event.target.value }); setLastNote(null); }}><option value="major">Major</option><option value="minor">Minor</option><option value="diminished">Diminished</option><option value="augmented">Augmented</option></select></div></div>
         <p className="triad-current"><strong>{chord.shortName}</strong><span>{chord.fullName}</span></p>
         <div className="row"><button type="button" className="btn btn-primary btn-sm" disabled={!audioAvailable} onClick={() => hearChord(chord)}>Hear the chord</button><button type="button" className="btn btn-sm" disabled={!audioAvailable} onClick={hearArpeggio}>Hear notes one by one</button><Link className="text-link" to={chordPath(root, quality)}>Chord details →</Link></div>
       </div>
       <div className="triad-foundation-notes"><p className="triad-control-label">THE THREE CHORD TONES <span>· TAP TO HEAR</span></p><div className="triad-tone-row">{chord.tones.map((tone, index) => <button key={tone.interval} type="button" className={`triad-tone triad-tone-${index}`} disabled={!audioAvailable} onClick={() => playMidi(60 + chord.rootPc + intervalSemitones(tone.interval))}><strong>{tone.name}</strong><small>{index === 0 ? 'Root' : tone.intervalName}</small><span>{index === 0 ? 'R' : tone.interval}</span></button>)}</div>
-        <div className="triad-comparison"><p className="triad-control-label">COMPARE WITH {root.toUpperCase()} MAJOR</p>{comparison.length ? <><p>{comparison.map((change) => `${change.from.name} → ${change.to.name} (${change.role} ${change.semitones < 0 ? 'down' : 'up'} one semitone)`).join(' · ')}.</p><small>One semitone is one fret on the same string. The other chord tones stay put.</small></> : <><p>Change the quality to hear and see what moves.</p><small>For minor, lower the third by one semitone; the root and fifth stay the same.</small></>}<div className="row"><button type="button" className="btn btn-sm" disabled={!audioAvailable} onClick={() => hearChord(buildChord(root, 'major'))}>Hear {root} major</button><button type="button" className="btn btn-sm" disabled={!audioAvailable} onClick={() => hearChord(buildChord(root, 'minor'))}>Hear {root} minor</button></div></div>
+        {unusualSpellings.length > 0 && <p className="triad-spelling-help">{unusualSpellings.map((tone) => `${tone.name} sounds like ${pcToNote(tone.pc)} on this guitar`).join(' · ')}. The spelling shows its role in the chord.</p>}
+        <div className="triad-comparison"><p className="triad-control-label">Compare with <span className="triad-root-spelling">{root}</span> major</p>{comparison.length ? <><p>{comparison.map((change) => `${change.from.name} → ${change.to.name} (${change.role} ${change.semitones < 0 ? 'down' : 'up'} one semitone)`).join(' · ')}.</p><small>One semitone is one fret on the same string. The other chord tones stay put.</small></> : <><p>Change the quality to hear and see what moves.</p><small>For minor, lower the third by one semitone; the root and fifth stay the same.</small></>}<div className="row"><button type="button" className="btn btn-sm" disabled={!audioAvailable} onClick={() => hearChord(buildChord(root, 'major'))}>Hear {root} major</button><button type="button" className="btn btn-sm" disabled={!audioAvailable} onClick={() => hearChord(buildChord(root, 'minor'))}>Hear {root} minor</button></div></div>
       </div>
     </section>
 
@@ -125,9 +127,10 @@ export default function TriadStudyPage() {
         <details className="triad-instrument"><summary>Instrument: {tuningId === 'standard' ? 'standard' : tuning.name.split(' (')[0]}{capo ? ` · capo ${capo}` : ''} · {fretCount} frets</summary><div className="triad-instrument-fields"><div className="field"><label htmlFor="study-tuning">Tuning</label><select id="study-tuning" value={tuningId} onChange={(event) => { update({ tuning: event.target.value }); setLastNote(null); }}>{TUNINGS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div><div className="field"><label htmlFor="study-capo">Capo</label><select id="study-capo" value={capo} onChange={(event) => { update({ capo: event.target.value }); setLastNote(null); }}>{Array.from({ length: 8 }, (_, value) => <option key={value} value={value}>{value ? `Fret ${value}` : 'None'}</option>)}</select></div><div className="field"><label htmlFor="study-frets">Frets shown</label><select id="study-frets" value={fretCount} onChange={(event) => { update({ frets: event.target.value }); setLastNote(null); }}>{FRET_OPTIONS.map((count) => <option key={count} value={count}>{count} frets</option>)}</select></div></div></details>
       </div>
       <div className="triad-neck-caption"><strong>{currentView === 'shape' ? visibleShape?.label : currentView === 'scale' ? `${root} ${scale.name} · chord tones inside` : `${chord.fullName} · all chord tones`}</strong><span>R = root · {chord.tones[1].interval} = third · {chord.tones[2].interval} = fifth{currentView === 'scale' ? ' · note names = other scale tones' : ''}</span></div>
+      <p className="triad-board-guide">The top line is string 1 (the thinnest). Numbers below are frets; “open” is at the left. One fret to the right raises a note by one semitone. R marks the root, and the numbers mark its third and fifth.</p>
       <Fretboard tuning={tuning} capo={capo} fretCount={fretCount} markers={markers} interactive interaction="play" onToggle={audition} preferFlats={root.includes('b')} ariaLabel={`${chord.fullName} relationship fretboard`} />
       <div className="triad-neck-foot"><p aria-live="polite">{lastNote ? <><strong>{playedTone?.name ?? playedScaleNote?.name ?? pcToNote(lastNote.pc, root.includes('b'))}</strong> · {playedTone ? (playedTone.interval === '1' ? 'root' : playedTone.intervalName) + ` of ${root}` : playedScaleNote && currentView === 'scale' ? `${playedScaleNote.intervalName} in the scale` : 'outside this triad'} · string {tuning.strings.length - lastNote.stringIndex}, {lastNote.fret ? `fret ${lastNote.fret}` : 'open'}</> : 'Select a note to hear it. Use arrow keys to move; scroll sideways to see the whole neck.'}</p>{currentView === 'scale' && <Link to={scalePath(scaleId, root)}>Open this scale →</Link>}</div>
-      {currentView === 'scale' && <p className="triad-scale-explanation">The chord tones are part of this same-root scale; the other notes add melodic choices. Shared notes alone do not make scales interchangeable—the chord, tonal center and phrase matter.</p>}
+      {currentView === 'scale' && <p className="triad-scale-explanation">These chord tones share sounding pitch classes with this same-root scale; a pitch may have a different written name there (such as Gb and F#). Other notes add melodic choices. Shared notes alone do not make scales interchangeable—the chord, tonal center and phrase matter.</p>}
     </section>
 
     <TriadVoicings key={context} chord={chord} tuning={tuning} capo={capo} fretCount={fretCount} onShow={showShape} />

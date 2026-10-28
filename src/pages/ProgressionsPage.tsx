@@ -47,7 +47,7 @@ export default function ProgressionsPage() {
     if (!isAudioSupported()) return;
     const audio = getAudioContext();
     for (const pc of chords) {
-      const chord = buildChord(pc.rootPc, pc.chordTypeId);
+      const chord = buildChord(pc.rootName, pc.chordTypeId);
       const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
       if (voicing) {
         const when = audio.currentTime + 0.02;
@@ -117,7 +117,7 @@ export default function ProgressionsPage() {
                   </td>
                   <td>
                     <Link to={chordPath(sev.rootName, sev.chordTypeId)}>
-                      {buildChord(sev.rootPc, sev.chordTypeId).shortName}
+                      {buildChord(sev.rootName, sev.chordTypeId).shortName}
                     </Link>
                   </td>
                   <td><span className="pill cool">{FUNCTION_LABEL[triad.function]}</span></td>
@@ -131,7 +131,7 @@ export default function ProgressionsPage() {
       <h2 className="section-title">{template.name} in {root}</h2>
       <div className="grid progression-grid">
         {progression.map((pc, i) => {
-          const chord = buildChord(pc.rootPc, pc.chordTypeId);
+          const chord = buildChord(pc.rootName, pc.chordTypeId);
           const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
           return (
             <div className="card progression-card" key={`${pc.roman}-${i}`}>
@@ -185,7 +185,7 @@ export default function ProgressionsPage() {
         {customChords.length > 0 && (
           <div className="grid progression-grid" style={{ marginTop: '1rem' }}>
             {customChords.map((pc, i) => {
-              const chord = buildChord(pc.rootPc, pc.chordTypeId);
+              const chord = buildChord(pc.rootName, pc.chordTypeId);
               const [voicing] = generateVoicings(chord.pitchClasses, tuning, chord.rootPc, { maxResults: 1 });
               return (
                 <div className="card progression-card" key={i}>

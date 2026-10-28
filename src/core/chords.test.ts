@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildChord, buildEncyclopedia, chordSearchNames } from './chords';
-import { CHORD_TYPES } from './chord-definitions';
+import { CHORD_TYPES, findChordTypeBySymbol } from './chord-definitions';
 import { noteToPc } from './notes';
 
 const pcs = (names: string[]) => names.map(noteToPc);
@@ -45,11 +45,22 @@ describe('chord construction from interval formulas', () => {
     expect(buildChord('C', 'dominant-7sharp11').pitchClasses).toEqual(pcs(['C', 'E', 'G', 'Bb', 'D', 'F#']));
   });
 
+  it('builds added suspended, minor-major, augmented-major and altered formulas', () => {
+    expect(buildChord('C', 'dominant-9-sus4').tones.map((tone) => tone.name)).toEqual(['C', 'F', 'G', 'Bb', 'D']);
+    expect(buildChord('C', 'dominant-13-sus4').tones.map((tone) => tone.name)).toEqual(['C', 'F', 'G', 'Bb', 'D', 'A']);
+    expect(buildChord('C', 'minor-six-nine').tones.map((tone) => tone.name)).toEqual(['C', 'Eb', 'G', 'A', 'D']);
+    expect(buildChord('C', 'minor-major-9').tones.map((tone) => tone.name)).toEqual(['C', 'Eb', 'G', 'B', 'D']);
+    expect(buildChord('C', 'major-7sharp5').tones.map((tone) => tone.name)).toEqual(['C', 'E', 'G#', 'B']);
+    expect(buildChord('C', 'half-diminished-9').tones.map((tone) => tone.name)).toEqual(['C', 'Eb', 'Gb', 'Bb', 'D']);
+    expect(buildChord('C', 'dominant-7b5b9').tones.map((tone) => tone.name)).toEqual(['C', 'E', 'Gb', 'Bb', 'Db']);
+  });
+
   it('builds quartal and special structures', () => {
     expect(buildChord('D', 'quartal').pitchClasses).toEqual(pcs(['D', 'G', 'C']));
-    // So What chord contains the pitch set D G C E A (ordering follows the formula)
-    const soWhat = buildChord('D', 'so-what').pitchClasses.sort((a, b) => a - b);
-    expect(soWhat).toEqual(pcs(['D', 'E', 'G', 'A', 'C']).sort((a, b) => a - b));
+    // The specific So What voicing is D–G–C–F–A ascending: three fourths and a major third.
+    const soWhat = buildChord('D', 'so-what');
+    expect(soWhat.tones.map((tone) => tone.name)).toEqual(['D', 'G', 'C', 'F', 'A']);
+    expect(soWhat.pitchClasses.sort((a, b) => a - b)).toEqual(pcs(['D', 'F', 'G', 'A', 'C']).sort((a, b) => a - b));
   });
 
   it('handles roots given as pitch classes and flat spellings', () => {
@@ -68,6 +79,17 @@ describe('chord construction from interval formulas', () => {
     expect(noteToPc('Bbb')).toBe(noteToPc('A'));
     expect(noteToPc('F##')).toBe(noteToPc('G'));
     expect(chordSearchNames(buildChord('C', 'minor')).join(' ')).toContain('c d# g');
+  });
+
+  it('preserves unusual roots and interval-correct slash spelling', () => {
+    expect(buildChord('Cb', 'major').tones.map((tone) => tone.name)).toEqual(['Cb', 'Eb', 'Gb']);
+    expect(buildChord('E#', 'major').tones.map((tone) => tone.name)).toEqual(['E#', 'G##', 'B#']);
+    expect(buildChord('B#', 'minor').tones.map((tone) => tone.name)).toEqual(['B#', 'D#', 'F##']);
+    expect(buildChord('C', 'minor', noteToPc('D#')).shortName).toBe('Cm/Eb');
+    expect(buildChord('Db', 'minor', noteToPc('E')).shortName).toBe('Dbm/Fb');
+    const nonChordBass = buildChord('D', 'major', 'C');
+    expect(nonChordBass.shortName).toBe('D/C');
+    expect(nonChordBass.isInversion).toBe(false);
   });
 
   it('represents slash chords and inversions', () => {
@@ -97,9 +119,32 @@ describe('chord construction from interval formulas', () => {
     }
   });
 
+  it('keeps omission and voicing metadata consistent with each formula', () => {
+    expect(new Set(CHORD_TYPES.map((type) => type.id)).size).toBe(CHORD_TYPES.length);
+    for (const type of CHORD_TYPES) {
+      for (const interval of [...(type.omittable ?? []), ...(type.identificationOmissions ?? []), ...(type.requireOneOf ?? [])]) {
+        expect(type.intervals, `${type.id} metadata`).toContain(interval);
+      }
+      expect(type.omittable ?? [], type.id).not.toContain('1');
+      if (type.voicingPattern) {
+        expect(type.voicingPattern[0], type.id).toBe(0);
+        expect(type.voicingPattern.every((value, index, pattern) => index === 0 || value > pattern[index - 1]), type.id).toBe(true);
+        expect(new Set(type.voicingPattern.map((value) => value % 12)), type.id).toEqual(new Set(buildChord('C', type.id).pitchClasses));
+      }
+    }
+  });
+
   it('the encyclopedia covers all 12 roots x all chord types', () => {
     const enc = buildEncyclopedia();
     expect(enc.length).toBe(12 * CHORD_TYPES.length);
+  });
+
+  it('respects case-sensitive major and minor chord symbols', () => {
+    expect(findChordTypeBySymbol('M')?.id).toBe('major');
+    expect(findChordTypeBySymbol('m')?.id).toBe('minor');
+    expect(findChordTypeBySymbol('M7')?.id).toBe('major-7');
+    expect(findChordTypeBySymbol('m7')?.id).toBe('minor-7');
+    expect(findChordTypeBySymbol('DOM7')?.id).toBe('dominant-7');
   });
 
   it('produces searchable names including notes and formula', () => {
