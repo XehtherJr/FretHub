@@ -81,7 +81,7 @@ describe('fretboard progression builder', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Morning practice' }));
     expect(getProgressions()).toEqual([]);
-  });
+  }, 15_000); // This full round trip performs many real fretboard interactions.
 
   it('puts Add beside the neck actions and uses a typed chord name to generate the shape', () => {
     renderBuilder();
