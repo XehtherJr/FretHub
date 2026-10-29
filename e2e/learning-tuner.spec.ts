@@ -71,28 +71,36 @@ test('tuner detects a synthetic A2 stream and releases its tracks', async ({ pag
   expect(await page.evaluate(() => window.__testMicrophone?.getTracks().every((track) => track.readyState === 'ended'))).toBe(true);
 });
 
-test('browser microphone permission grant and denial', async ({ browser, baseURL }) => {
+test('native fake microphone capture and browser-enforced policy denial', async ({ browser, baseURL }) => {
+  // Chromium uses a fake device and auto-accept UI in headless mode. To test a
+  // genuine NotAllowedError, deny microphone access with a Permissions Policy;
+  // the fake UI otherwise overrides Playwright's per-context permission grant.
   const granted = await browser.newContext({ baseURL, permissions: ['microphone'], serviceWorkers: 'block' });
   const denied = await browser.newContext({ baseURL, serviceWorkers: 'block' });
   try {
     await blockExternalNetwork(granted);
     await blockExternalNetwork(denied);
     const allowedPage = await granted.newPage();
-    await allowedPage.goto('/tuner');
-    // Some stripped serverless Chromium builds disable getUserMedia completely.
-    // CI's official Playwright browser must support it; custom local builds may skip.
-    const capability = await allowedPage.evaluate(async () => {
-      try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); stream.getTracks().forEach((track) => track.stop()); return 'supported'; }
-      catch (error) { return (error as Error).name; }
+    await allowedPage.addInitScript(() => {
+      const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = async (constraints) => {
+        const stream = await capture(constraints);
+        window.__testMicrophone = stream;
+        return stream;
+      };
     });
-    if (capability === 'NotSupportedError' && !process.env.CI) test.skip(true, 'This local Chromium build has no microphone capture support.');
-    expect(capability).toBe('supported');
+    await allowedPage.goto('/tuner');
     await allowedPage.getByRole('button', { name: 'Start tuner' }).click();
     await expect(allowedPage.getByRole('button', { name: 'Stop tuner' })).toBeVisible();
+    expect(await allowedPage.evaluate(() => window.__testMicrophone?.getAudioTracks()[0]?.readyState)).toBe('live');
     await allowedPage.getByRole('button', { name: 'Stop tuner' }).click();
+    expect(await allowedPage.evaluate(() => window.__testMicrophone?.getTracks().every((track) => track.readyState === 'ended'))).toBe(true);
 
-    await denied.grantPermissions([], { origin: baseURL });
     const deniedPage = await denied.newPage();
+    await deniedPage.route('http://127.0.0.1:4175/tuner', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, headers: { ...response.headers(), 'permissions-policy': 'microphone=()' } });
+    });
     await deniedPage.goto('/tuner');
     await deniedPage.getByRole('button', { name: 'Start tuner' }).click();
     await expect(deniedPage.getByRole('alert')).toContainText('Microphone permission denied');

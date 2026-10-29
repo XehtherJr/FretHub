@@ -59,9 +59,9 @@ configuration and an intercepted in-memory service; external browser requests an
 are blocked. The browser suite writes its fake build to the ignored `.e2e-dist/` directory, separate
 from `dist/`. Tests cover two isolated browser contexts with a forced revision race, v2 migration,
 pattern save/reload and Web Audio scheduling, learning navigation, a synthetic tuner signal, and
-host restrictions. The permission test uses Chromium's fake microphone rather than a physical
-instrument. Some stripped local Chromium builds disable microphone capture; that test skips there,
-but it must run in CI's official Playwright browser. These tests are not a live Supabase test, a
+host restrictions. Chromium uses a fake microphone and auto-accepts its permission UI; a browser
+Permissions Policy supplies the real denied-access error path. This does not test a physical
+microphone or the user's browser permission prompt. These tests are not a live Supabase test, a
 human audio audition, or evidence of learning. See the [guitarist study protocol](docs/guitarist-study.md)
 for a proposed usability and delayed-recall study; it contains no results.
 
