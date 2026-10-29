@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '@/App';
@@ -14,6 +14,7 @@ vi.mock('@core/audio', () => ({
 
 const renderAt = (route: string) => render(<MemoryRouter initialEntries={[route]}><App /></MemoryRouter>);
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+afterEach(() => vi.restoreAllMocks());
 
 describe('connected triad study', () => {
   it('connects the curriculum and chord and scale pages to real context-aware routes', () => {
@@ -208,6 +209,24 @@ describe('connected triad study', () => {
     page.unmount();
     renderAt('/theory/triads/explore');
     expect(screen.getByText(/You have completed this application challenge/)).toBeInTheDocument();
+  });
+
+  it('does not claim the transfer challenge was saved if local storage fails', () => {
+    renderAt('/theory/triads/explore');
+    fireEvent.click(screen.getByRole('button', { name: 'Start the two-key challenge' }));
+    let board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of C major' });
+    fireEvent.click(within(board).getByRole('button', { name: /String 1, fret 12/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Try another key/ }));
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of F major' });
+    fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 10/ }));
+    expect(screen.getByText(/Progress could not be saved on this device/)).toBeInTheDocument();
+    expect(screen.queryByText(/saved as an application challenge/)).not.toBeInTheDocument();
+    expect(getCompletedLessons()).not.toContain(TRIAD_TRANSFER_ID);
   });
 
   it('uses concept-specific labs, related lessons and useful retry hints', () => {

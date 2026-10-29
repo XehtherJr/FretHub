@@ -23,7 +23,8 @@ function write<T>(key: string, value: T): boolean {
   try { localStorage.setItem(PREFIX + key, JSON.stringify(value)); return true; } catch { return false; }
 }
 
-/** Apply related local records together; restore the old values if storage is full. */
+/** Apply related local records together, with best-effort rollback if storage fails.
+ * localStorage has no multi-key transaction; another tab or a failed rollback can still interfere. */
 function writeMany(entries: [string, unknown][]): boolean {
   if (typeof localStorage === 'undefined') return false;
   const previous: [string, string | null][] = [];
@@ -62,12 +63,18 @@ function nextStamp(previous = 0): number {
   lastModified = Math.max(Date.now(), lastModified + 1, previous + 1);
   return lastModified;
 }
-function stamp(part: SnapshotPart, key: string, value: boolean | string): void {
+function stampedMetadata(part: SnapshotPart, key: string, value: boolean | string): LibrarySnapshot {
   const meta = normalizeSnapshot(read<unknown>('sync-meta', emptySnapshot()));
   const modified = nextStamp(meta[part]?.[key]?.modified);
   // The union is safe here: callers select the value type matching `part`.
   (meta[part] as Record<string, VersionedValue<boolean | string>>)[key] = { value, modified };
-  write('sync-meta', meta);
+  return meta;
+}
+function validLibraryKey(key: string): boolean {
+  return !!key && key.length <= 180 && key !== '__proto__' && key !== 'constructor';
+}
+function hasOwn(record: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 export function emptySnapshot(): LibrarySnapshot {
@@ -115,10 +122,10 @@ export function normalizeSnapshot(input: unknown): LibrarySnapshot {
 /** Convert older local-only libraries without discarding favorites or notes. */
 export function getLibrarySnapshot(): LibrarySnapshot {
   const snapshot = normalizeSnapshot(read<unknown>('sync-meta', emptySnapshot()));
-  for (const key of getFavorites()) if (!snapshot.favorites[key]) snapshot.favorites[key] = { value: true, modified: 0 };
-  for (const [key, value] of Object.entries(getNotes())) if (!snapshot.notes[key]) snapshot.notes[key] = { value, modified: 0 };
-  for (const id of getCompletedLessons()) if (!snapshot.lessons[id]) snapshot.lessons[id] = { value: true, modified: 0 };
-  for (const progression of getProgressions()) if (!snapshot.progressions[progression.id]) snapshot.progressions[progression.id] = { value: progression, modified: 0 };
+  for (const key of getFavorites()) if (!hasOwn(snapshot.favorites, key)) snapshot.favorites[key] = { value: true, modified: 0 };
+  for (const [key, value] of Object.entries(getNotes())) if (!hasOwn(snapshot.notes, key)) snapshot.notes[key] = { value, modified: 0 };
+  for (const id of getCompletedLessons()) if (!hasOwn(snapshot.lessons, id)) snapshot.lessons[id] = { value: true, modified: 0 };
+  for (const progression of getProgressions()) if (!hasOwn(snapshot.progressions, progression.id)) snapshot.progressions[progression.id] = { value: progression, modified: 0 };
   return snapshot;
 }
 
@@ -130,12 +137,14 @@ export function mergeLibrarySnapshots(a: LibrarySnapshot, b: LibrarySnapshot): L
     const right = b[part] as Record<string, VersionedValue<unknown>>;
     const target = merged[part] as Record<string, VersionedValue<unknown>>;
     for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
-      const x = left[key];
-      const y = right[key];
-      if (!x) target[key] = y;
-      else if (!y) target[key] = x;
-      else if (x.modified !== y.modified) target[key] = x.modified > y.modified ? x : y;
-      else target[key] = canonicalJson(x.value) <= canonicalJson(y.value) ? x : y;
+      // Item IDs can be names such as "toString"; inherited properties are
+      // not versioned records and must not win a merge against real data.
+      const x = hasOwn(left, key) ? left[key] : undefined;
+      const y = hasOwn(right, key) ? right[key] : undefined;
+      if (!x && y) target[key] = y;
+      else if (x && !y) target[key] = x;
+      else if (x && y && x.modified !== y.modified) target[key] = x.modified > y.modified ? x : y;
+      else if (x && y) target[key] = canonicalJson(x.value) <= canonicalJson(y.value) ? x : y;
     }
   }
   return merged;
@@ -204,11 +213,14 @@ export function switchLibraryOwner(nextId: string): boolean {
 // ------------------------------------------------------------- favorites
 export function getFavorites(): string[] { return read<string[]>('favorites', []); }
 export function isFavorite(chordKey: string): boolean { return getFavorites().includes(chordKey); }
-export function toggleFavorite(chordKey: string): boolean {
+/** Return the new state, or null if neither the item nor its sync stamp could be saved. */
+export function toggleFavorite(chordKey: string): boolean | null {
+  if (!validLibraryKey(chordKey)) return null;
   const list = getFavorites();
   const exists = list.includes(chordKey);
-  write('favorites', exists ? list.filter((k) => k !== chordKey) : [chordKey, ...list]);
-  stamp('favorites', chordKey, !exists);
+  const meta = stampedMetadata('favorites', chordKey, !exists);
+  const next = exists ? list.filter((k) => k !== chordKey) : [chordKey, ...list];
+  if (!writeMany([['sync-meta', meta], ['favorites', next]])) return null;
   notify();
   return !exists;
 }
@@ -224,24 +236,31 @@ export function addRecent(entry: Omit<RecentChord, 'viewedAt'>): void {
 
 // ----------------------------------------------------------------- notes
 export function getNotes(): Record<string, string> { return read<Record<string, string>>('notes', {}); }
-export function getNote(chordKey: string): string { return getNotes()[chordKey] ?? ''; }
-export function saveNote(chordKey: string, text: string): void {
+export function getNote(chordKey: string): string {
+  const notes = getNotes();
+  return hasOwn(notes, chordKey) ? notes[chordKey] : '';
+}
+export function saveNote(chordKey: string, text: string): boolean {
+  if (!validLibraryKey(chordKey) || text.length > 50000) return false;
   const all = getNotes();
   if (text.trim()) all[chordKey] = text;
   else delete all[chordKey];
-  write('notes', all);
-  stamp('notes', chordKey, text.trim() ? text : '');
+  const meta = stampedMetadata('notes', chordKey, text.trim() ? text : '');
+  if (!writeMany([['sync-meta', meta], ['notes', all]])) return false;
   notify();
+  return true;
 }
 
 // ------------------------------------------------------ lesson challenges
 export function getCompletedLessons(): string[] { return read<string[]>('lessons-complete', []); }
-export function markLessonComplete(id: string): void {
+export function markLessonComplete(id: string): boolean {
+  if (!validLibraryKey(id)) return false;
   const completed = getCompletedLessons();
-  if (completed.includes(id)) return;
-  write('lessons-complete', [...completed, id]);
-  stamp('lessons', id, true);
+  if (completed.includes(id)) return true;
+  const meta = stampedMetadata('lessons', id, true);
+  if (!writeMany([['sync-meta', meta], ['lessons-complete', [...completed, id]]])) return false;
   notify();
+  return true;
 }
 
 // ------------------------------------------------------------- progress

@@ -27,7 +27,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('application routing and rendering', () => {
   it('renders the home page with destinations and playable chord references', () => {
@@ -712,6 +712,45 @@ describe('application routing and rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Disappearing' }));
     expect(screen.getByLabelText('Audible bars')).toBeInTheDocument();
     expect(screen.getByLabelText('Silent bars')).toBeInTheDocument();
+  });
+
+  it('reports local-storage failures without claiming a favorite or note was saved', () => {
+    renderAt('/chords/C/major');
+    const original = Storage.prototype.setItem;
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    const saveFavorite = screen.getByRole('button', { name: /☆ Save/ });
+    fireEvent.click(saveFavorite);
+    expect(screen.getByText(/Could not save the favorite on this device/)).toBeInTheDocument();
+    expect(saveFavorite).toHaveAttribute('aria-pressed', 'false');
+    const note = screen.getByRole('textbox', { name: 'Personal notes for this chord' });
+    fireEvent.change(note, { target: { value: 'Keep this draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(screen.getByText(/Could not save the note on this device/)).toBeInTheDocument();
+    expect(note).toHaveValue('Keep this draft');
+    expect(getNote('C|major')).toBe('');
+    fail.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(getNote('C|major')).toBe('Keep this draft');
+  });
+
+  it('does not claim a correct lesson answer was saved when storage fails', () => {
+    renderAt('/theory/meet-your-guitar');
+    const original = Storage.prototype.setItem;
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'String 1, high E' }));
+    expect(screen.getByText(/You got it/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/progress could not be saved/);
+    expect(JSON.parse(localStorage.getItem('frethub:lessons-complete') ?? '[]')).not.toContain('meet-your-guitar');
+    fail.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'String 1, high E' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('frethub:lessons-complete') ?? '[]')).toContain('meet-your-guitar');
   });
 
   it('keeps unsaved chord-note edits when a remote note arrives', () => {

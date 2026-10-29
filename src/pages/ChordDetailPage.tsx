@@ -180,6 +180,7 @@ export default function ChordDetailPage() {
             aria-pressed={favorite}
             onClick={() => {
               const nowFav = toggle(key);
+              if (nowFav === null) { showToast('Could not save the favorite on this device. Check browser storage.'); return; }
               showToast(nowFav ? `Saved ${chord.shortName} to your library` : `Removed ${chord.shortName} from favorites`);
             }}
           >
@@ -410,6 +411,7 @@ export default function ChordDetailPage() {
         <h2>Your notes on {chord.shortName}</h2>
         <textarea
           rows={3}
+          maxLength={50000}
           placeholder="Fingerings, song references, or practice reminders…"
           value={noteText}
           onChange={(e) => { noteDirty.current = true; setNoteText(e.target.value); }}
@@ -421,10 +423,10 @@ export default function ChordDetailPage() {
             type="button"
             className="btn btn-primary btn-sm"
             onClick={() => {
+              if (!saveNote(key, noteText)) { showToast('Could not save the note on this device. Check browser storage.'); return; }
               lastSavedNote.current = noteText.trim() ? noteText : '';
               noteDirty.current = false;
               setNoteConflict(false);
-              saveNote(key, noteText);
               showToast('Note saved');
             }}
           >

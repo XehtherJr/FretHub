@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { applyLibrarySnapshot, deleteProgression, emptySnapshot, getCompletedLessons, getFavorites, getLibrarySnapshot, getNotes, getProgressions, markLessonComplete, mergeLibrarySnapshots, normalizeSnapshot, saveNote, saveProgression, switchLibraryOwner, toggleFavorite, type LibrarySnapshot } from './storage';
+import { applyLibrarySnapshot, deleteProgression, emptySnapshot, getCompletedLessons, getFavorites, getLibrarySnapshot, getNote, getNotes, getProgressions, markLessonComplete, mergeLibrarySnapshots, normalizeSnapshot, saveNote, saveProgression, switchLibraryOwner, toggleFavorite, type LibrarySnapshot } from './storage';
 import type { SavedProgression } from './userProgressions';
 import { syncLibrary } from '@/lib/cloudLibrary';
 
 beforeEach(() => localStorage.clear());
+afterEach(() => vi.restoreAllMocks());
 
 const progression: SavedProgression = {
   id: 'song-1', name: 'First song', tuningId: 'standard', capo: 0, bpm: 90, loop: true,
@@ -36,6 +37,55 @@ describe('local-first library', () => {
     expect(getNotes()).toEqual({});
     expect(getCompletedLessons()).toContain('triads');
     expect(merged.favorites['C|major'].value).toBe(false);
+  });
+  it('preserves valid item ids that also name inherited object properties', () => {
+    const remote = emptySnapshot();
+    const inheritedKey = ['to', 'String'].join('');
+    remote.notes[inheritedKey] = { value: 'Keep this note', modified: 7 };
+    remote.progressions[inheritedKey] = { value: { ...progression, id: inheritedKey }, modified: 8 };
+    const merged = mergeLibrarySnapshots(remote, emptySnapshot());
+    expect(merged.notes[inheritedKey]).toEqual(remote.notes[inheritedKey]);
+    expect(merged.progressions[inheritedKey]).toEqual(remote.progressions[inheritedKey]);
+    expect(applyLibrarySnapshot(merged)).toBe(true);
+    expect(getLibrarySnapshot().notes[inheritedKey]).toEqual(remote.notes[inheritedKey]);
+    expect(getProgressions().map((item) => item.id)).toContain(inheritedKey);
+    localStorage.removeItem('frethub:sync-meta'); // Older local-only libraries have no metadata.
+    expect(getLibrarySnapshot().notes[inheritedKey].value).toBe('Keep this note');
+    expect(getLibrarySnapshot().progressions[inheritedKey].value?.id).toBe(inheritedKey);
+    expect(saveNote(inheritedKey, '')).toBe(true);
+    expect(getNote(inheritedKey)).toBe('');
+  });
+  it('rolls back favorites, notes and lesson checks when sync metadata cannot be stored', () => {
+    toggleFavorite('C|major');
+    saveNote('C|major', 'Original');
+    markLessonComplete('triads');
+    const before = getLibrarySnapshot();
+    const original = Storage.prototype.setItem;
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    expect(toggleFavorite('C|major')).toBeNull();
+    expect(saveNote('C|major', 'Changed')).toBe(false);
+    expect(markLessonComplete('intervals')).toBe(false);
+    expect(getFavorites()).toEqual(['C|major']);
+    expect(getNotes()).toEqual({ 'C|major': 'Original' });
+    expect(getCompletedLessons()).toEqual(['triads']);
+    expect(getLibrarySnapshot()).toEqual(before);
+    fail.mockRestore();
+  });
+  it('rolls back metadata if a visible library record cannot be stored', () => {
+    saveNote('C|major', 'Original');
+    const before = getLibrarySnapshot();
+    const original = Storage.prototype.setItem;
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:notes') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    expect(saveNote('C|major', 'Changed')).toBe(false);
+    expect(getNotes()).toEqual({ 'C|major': 'Original' });
+    expect(getLibrarySnapshot()).toEqual(before);
+    fail.mockRestore();
   });
   it('keeps progressions and deletion tombstones across merges', () => {
     expect(saveProgression(progression)).toBe(true);
@@ -250,6 +300,17 @@ describe('cloud sync', () => {
     expect(new Set(getFavorites())).toEqual(new Set(['C|major', 'D|major']));
     expect(cloud.row?.revision).toBe(3);
   });
+  it('does not lose a cloud item whose id names an inherited object property', async () => {
+    const cloud = new FakeCloud();
+    const key = ['to', 'String'].join('');
+    const data = emptySnapshot();
+    data.notes[key] = { value: 'Keep me', modified: 12 };
+    cloud.row = { data, revision: 1 };
+    toggleFavorite('C|major');
+    await syncLibrary(cloud as unknown as SupabaseClient, 'user-a');
+    expect(cloud.row?.data.notes[key]).toEqual({ value: 'Keep me', modified: 12 });
+    expect(getNote(key)).toBe('Keep me');
+  });
   it('does not overwrite an unsupported newer cloud format', async () => {
     const cloud = new FakeCloud();
     cloud.row = { data: { ...emptySnapshot(), version: 4 } as unknown as LibrarySnapshot, revision: 1 };
@@ -257,6 +318,27 @@ describe('cloud sync', () => {
     await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(/unsupported format/);
     expect(cloud.row.revision).toBe(1);
     expect(getFavorites()).toEqual(['C|major']);
+  });
+  it.each(['favorites', 'notes', 'lessons'] as const)('does not discard unsupported cloud %s while merging other edits', async (part) => {
+    const cloud = new FakeCloud();
+    const badValue = part === 'notes' ? 42 : 'not a boolean';
+    const data = { ...emptySnapshot(), [part]: { damaged: { value: badValue, modified: 1 } } };
+    cloud.row = { data: data as unknown as LibrarySnapshot, revision: 4 };
+    toggleFavorite('C|major');
+    await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(new RegExp(`unsupported ${part} data`, 'i'));
+    expect(cloud.row).toEqual({ data, revision: 4 });
+    expect(getFavorites()).toEqual(['C|major']);
+  });
+  it('does not drop unrecognized cloud fields or versioned-entry metadata', async () => {
+    const cloud = new FakeCloud();
+    const unknownTopLevel = { ...emptySnapshot(), preferences: { theme: 'light' } };
+    cloud.row = { data: unknownTopLevel as unknown as LibrarySnapshot, revision: 2 };
+    await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(/unsupported library data/i);
+    expect(cloud.row).toEqual({ data: unknownTopLevel, revision: 2 });
+    const unknownEntry = { ...emptySnapshot(), notes: { 'C|major': { value: 'Keep me', modified: 1, origin: 'future-client' } } };
+    cloud.row = { data: unknownEntry as unknown as LibrarySnapshot, revision: 3 };
+    await expect(syncLibrary(cloud as unknown as SupabaseClient, 'user-a')).rejects.toThrow(/unsupported notes data/i);
+    expect(cloud.row).toEqual({ data: unknownEntry, revision: 3 });
   });
   it('does not discard malformed cloud progressions while merging other changes', async () => {
     const cloud = new FakeCloud();
