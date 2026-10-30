@@ -33,6 +33,17 @@ export default function TheoryIndexPage() {
         <ol>{CONNECTIONS.map((item, index) => <li key={item.id}><Link to={lessonPath(item.id)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{item.title}</strong><small>{item.detail}</small></Link></li>)}</ol>
         <div className="theory-study-link"><div><strong>See the connections for yourself</strong><span>Take a familiar chord from its notes to the neck, a scale and a new key.</span></div><Link to={triadStudyPath()} className="btn btn-primary btn-sm">Explore a triad →</Link></div>
       </section>
+      <section className="theory-practice-path" aria-labelledby="practice-path-heading">
+        <h2 id="practice-path-heading">Try a complete practice loop</h2>
+        <p>New to guitar? <Link to={lessonPath('meet-your-guitar')}>Meet your guitar</Link> first. If you know a few open chords, start here:</p>
+        <ol>
+          <li><strong>Learn:</strong> Read about <Link to={lessonPath('triads')}>the three tones of a triad</Link>.</li>
+          <li><strong>Explore:</strong> <Link to={triadStudyPath()}>Start the triad study</Link>; hear the tones and find them on the neck.</li>
+          <li><strong>Apply:</strong> Use the <Link to={`${triadStudyPath()}#transfer-heading`}>two-key challenge</Link>, with guidance if you need it.</li>
+          <li><strong>Return and transfer:</strong> Later, try the challenge without the guide, explain the third in your own words, and repeat with another root. Then check your answer.</li>
+        </ol>
+        <p className="small muted">There is no automatic reminder; a completed check records an attempt, not lasting recall.</p>
+      </section>
       <div className="theory-progress"><div><strong>Your lesson checks</strong><span>{completedCount} of {LESSONS.length} challenges completed</span></div><progress value={completedCount} max={LESSONS.length} aria-label="Lesson challenges completed" /><small>These record completed checks, not mastery. Progress is saved on this device; an account is optional.</small></div>
 
       {ORDER.map((level, levelIndex) => {

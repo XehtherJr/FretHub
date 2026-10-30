@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { applyLibrarySnapshot, canonicalJson, emptySnapshot, getLibrarySnapshot, mergeLibrarySnapshots, normalizeSnapshot, type LibrarySnapshot } from '@core/storage';
+import { applySnapshotForSync, canonicalJson, emptySnapshot, readSnapshotForSync, mergeLibrarySnapshots, normalizeSnapshot, type LibrarySnapshot } from '@core/storage';
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -15,8 +15,9 @@ function canonical(snapshot: LibrarySnapshot): string { return canonicalJson(sna
 
 /**
  * Merge local edits with the cloud row using revision-checked updates. A
- * concurrent writer causes a fresh read and retry, not a silent overwrite.
- * The caller's guard prevents applying one account's response after sign-out.
+ * concurrent row writer causes a fresh read and retry. Same-item edits still
+ * use device timestamps, so one version can win over another. The caller's
+ * guard prevents applying one account's response after sign-out.
  */
 export async function syncLibrary(client: SupabaseClient, userId: string, isCurrent = () => true): Promise<{ dirty: boolean }> {
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -28,16 +29,26 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
       throw new Error('This library was saved in an unsupported format. It was not changed.');
     }
     const remote = row ? normalizeSnapshot(row.data) : emptySnapshot();
-    // Never replace a cloud row after silently discarding an unfamiliar or
-    // damaged progression or pattern. A newer app or a repair may recover it.
-    if (row && (row.data.version === 2 || row.data.version === 3)) {
-      const progressions: unknown = row.data.progressions;
-      if (!progressions || typeof progressions !== 'object' || Array.isArray(progressions)
-        || Object.keys(progressions).length !== Object.keys(remote.progressions).length) {
-        throw new Error('This library contains unsupported progression data. It was not changed.');
+    // Normalization is useful for displaying old local data, but must never
+    // silently drop unrecognized cloud data before writing a merged snapshot.
+    // Compare whole records, not just counts: entry metadata can be lost too.
+    if (row) {
+      const fields = ['version', 'favorites', 'notes', 'lessons', 'progressions'];
+      if (Object.keys(row.data).some((field) => !fields.includes(field))) {
+        throw new Error('This library contains unsupported library data. It was not changed.');
+      }
+      for (const part of ['favorites', 'notes', 'lessons', 'progressions'] as const) {
+        const records: unknown = row.data[part];
+        // v1 did not have progressions; missing older collections contain no data.
+        if (records === undefined && (part !== 'progressions' || row.data.version === 1)) continue;
+        if (!records || typeof records !== 'object' || Array.isArray(records) || canonicalJson(records) !== canonicalJson(remote[part])) {
+          const label = part === 'progressions' ? 'progression' : part;
+          throw new Error(`This library contains unsupported ${label} data. It was not changed.`);
+        }
       }
     }
-    const merged = mergeLibrarySnapshots(remote, getLibrarySnapshot());
+    const merged = mergeLibrarySnapshots(remote, await readSnapshotForSync(userId));
+    if (!isCurrent()) return { dirty: false };
     if (!row || row.data.version !== 3 || canonical(merged) !== canonical(remote)) {
       if (!isCurrent()) return { dirty: false };
       if (!row) {
@@ -55,8 +66,7 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
     if (!isCurrent()) return { dirty: false };
     // Keep edits made while the network request was in flight, and send them
     // on the next pass rather than overwriting them with the older response.
-    const latest = mergeLibrarySnapshots(merged, getLibrarySnapshot());
-    if (!applyLibrarySnapshot(latest)) throw new Error('Could not save the synced library on this device. Check browser storage and try again.');
+    const latest = await applySnapshotForSync(userId, merged);
     return { dirty: canonical(latest) !== canonical(merged) };
   }
   throw new Error('Your library changed on another device. Please try syncing again.');

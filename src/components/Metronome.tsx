@@ -32,6 +32,7 @@ export default function Metronome() {
   const calibration = useRef<number[] | null>(null);
   const [detectorError, setDetectorError] = useState('');
   const [detectorReady, setDetectorReady] = useState(false);
+  const detectorRef = useRef<AudioWorkletNode | null>(null);
   const microphone = useAudioInput();
   const clock = useRef({ anchor: 0, bpm, running: false, latencyMs });
   const taps = useRef<number[]>([]);
@@ -83,6 +84,7 @@ export default function Metronome() {
 
   useEffect(() => { setOffsets([]); calibration.current = null; setCalibrationCount(null); setCurrentBeat(0); }, [bpm, meterId, sevenGrouping, mode]);
   useEffect(() => { setOffsets([]); }, [latencyMs]);
+  useEffect(() => { detectorRef.current?.port.postMessage({ bpm }); }, [bpm]);
   useEffect(() => {
     if (mode !== 'coach' && (microphone.input || microphone.status === 'requesting')) microphone.stop();
     // stop is intentionally called only when the selected mode changes.
@@ -103,6 +105,8 @@ export default function Metronome() {
         await input.context.audioWorklet.addModule(`${import.meta.env.BASE_URL}audio/onset-detector.js`);
         if (disposed) return;
         detector = new AudioWorkletNode(input.context, 'frethub-onset');
+        detectorRef.current = detector;
+        detector.port.postMessage({ bpm: clock.current.bpm });
         sink = input.context.createGain();
         sink.gain.value = 0;
         detector.port.onmessage = (event: MessageEvent<{ time: number }>) => {
@@ -136,13 +140,17 @@ export default function Metronome() {
         sink.connect(input.context.destination);
         setDetectorReady(true);
       } catch {
-        if (!disposed) setDetectorError('Timing analysis is not supported in this browser. Steady and disappearing modes still work.');
+        if (!disposed) {
+          setDetectorError('Timing analysis is not supported in this browser. Steady and disappearing modes still work.');
+          microphone.stop();
+        }
       }
     };
     void connect();
     return () => {
       disposed = true;
       if (detector) {
+        if (detectorRef.current === detector) detectorRef.current = null;
         try { input.source.disconnect(detector); } catch { /* The microphone may already have been stopped. */ }
         detector.port.onmessage = null;
         detector.disconnect();

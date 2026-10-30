@@ -51,13 +51,13 @@ export function validPlaybackPattern(value: unknown, stringCount: number): value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const pattern = value as Record<string, unknown>;
   if (![1, 2, 3, 4].includes(pattern.stepsPerBeat as number)) return false;
-  if (pattern.mode === 'arpeggio') return pattern.steps === undefined;
-  if (pattern.mode !== 'custom' || !Array.isArray(pattern.steps) || !pattern.steps.length || pattern.steps.length > MAX_PATTERN_STEPS) return false;
+  if (pattern.mode === 'arpeggio') return pattern.steps === undefined && Object.keys(pattern).every((key) => ['mode', 'stepsPerBeat'].includes(key));
+  if (Object.keys(pattern).some((key) => !['mode', 'stepsPerBeat', 'steps'].includes(key)) || pattern.mode !== 'custom' || !Array.isArray(pattern.steps) || !pattern.steps.length || pattern.steps.length > MAX_PATTERN_STEPS) return false;
   return pattern.steps.every((step: unknown) => {
     if (!step || typeof step !== 'object' || Array.isArray(step)) return false;
     const entry = step as Record<string, unknown>;
-    if (entry.kind === 'down' || entry.kind === 'up' || entry.kind === 'rest') return entry.strings === undefined;
-    if (entry.kind !== 'pick' || !Array.isArray(entry.strings) || !entry.strings.length || entry.strings.length > stringCount) return false;
+    if (entry.kind === 'down' || entry.kind === 'up' || entry.kind === 'rest') return entry.strings === undefined && Object.keys(entry).every((key) => key === 'kind');
+    if (Object.keys(entry).some((key) => !['kind', 'strings'].includes(key)) || entry.kind !== 'pick' || !Array.isArray(entry.strings) || !entry.strings.length || entry.strings.length > stringCount) return false;
     return entry.strings.every((index: unknown) => Number.isInteger(index) && (index as number) >= 0 && (index as number) < stringCount)
       && new Set(entry.strings).size === entry.strings.length;
   });

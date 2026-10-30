@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from '@/App';
 import { playMidi, playSequence, strum } from '@core/audio';
@@ -14,6 +14,7 @@ vi.mock('@core/audio', () => ({
 
 const renderAt = (route: string) => render(<MemoryRouter initialEntries={[route]}><App /></MemoryRouter>);
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+afterEach(() => vi.restoreAllMocks());
 
 describe('connected triad study', () => {
   it('connects the curriculum and chord and scale pages to real context-aware routes', () => {
@@ -132,7 +133,7 @@ describe('connected triad study', () => {
     expect(board.querySelectorAll('.fb-note').length).toBeGreaterThan(6);
   });
 
-  it('guides a beginner from an open string to a root and a hidden third, then removes the guide for transfer', () => {
+  it('guides a beginner from an open string to a root and a hidden third, then removes the guide for transfer', async () => {
     renderAt('/theory/triads/explore');
     fireEvent.click(screen.getByRole('button', { name: 'Start the two-key challenge' }));
     let board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of C major' });
@@ -163,7 +164,7 @@ describe('connected triad study', () => {
     expect(screen.getByRole('status')).toHaveTextContent('try another fret');
     fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 10/ }));
     expect(screen.getByText(/Two keys explored/)).toBeInTheDocument();
-    expect(getCompletedLessons()).toContain(TRIAD_TRANSFER_ID);
+    await waitFor(() => expect(getCompletedLessons()).toContain(TRIAD_TRANSFER_ID));
   });
 
   it('keeps unusual spelling, capo context and a reachable guided route', () => {
@@ -186,7 +187,7 @@ describe('connected triad study', () => {
     expect(screen.getByRole('heading', { name: 'Find the third of Fb minor' })).toBeInTheDocument();
   });
 
-  it('gives actionable retry feedback and saves application separately after transfer to another key', () => {
+  it('gives actionable retry feedback and saves application separately after transfer to another key', async () => {
     const page = renderAt('/theory/triads/explore');
     fireEvent.click(screen.getByRole('button', { name: 'Start the two-key challenge' }));
     expect(screen.getByRole('heading', { name: 'Find the third of C major' })).toBeInTheDocument();
@@ -201,13 +202,31 @@ describe('connected triad study', () => {
     board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of F major' });
     fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 10/ }));
     expect(screen.getByRole('status')).toHaveTextContent('A is the major third of F');
-    expect(screen.getByText(/not a claim of mastery/)).toBeInTheDocument();
-    expect(getCompletedLessons()).toContain(TRIAD_TRANSFER_ID);
+    expect(await screen.findByText(/not a claim of mastery/)).toBeInTheDocument();
+    await waitFor(() => expect(getCompletedLessons()).toContain(TRIAD_TRANSFER_ID));
     expect(getCompletedLessons()).not.toContain('triads');
     expect(getLibrarySnapshot().lessons[TRIAD_TRANSFER_ID].value).toBe(true);
     page.unmount();
     renderAt('/theory/triads/explore');
     expect(screen.getByText(/You have completed this application challenge/)).toBeInTheDocument();
+  });
+
+  it('does not claim the transfer challenge was saved if local storage fails', async () => {
+    renderAt('/theory/triads/explore');
+    fireEvent.click(screen.getByRole('button', { name: 'Start the two-key challenge' }));
+    let board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of C major' });
+    fireEvent.click(within(board).getByRole('button', { name: /String 1, fret 12/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Try another key/ }));
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    board = screen.getByRole('group', { name: 'Challenge fretboard: find the third of F major' });
+    fireEvent.click(within(board).getByRole('button', { name: /String 2, fret 10/ }));
+    expect(await screen.findByText(/Progress could not be saved on this device/)).toBeInTheDocument();
+    expect(screen.queryByText(/saved as an application challenge/)).not.toBeInTheDocument();
+    expect(getCompletedLessons()).not.toContain(TRIAD_TRANSFER_ID);
   });
 
   it('uses concept-specific labs, related lessons and useful retry hints', () => {

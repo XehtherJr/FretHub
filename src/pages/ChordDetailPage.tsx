@@ -5,12 +5,13 @@ import { getChordType } from '@core/chord-definitions';
 import { TUNINGS, getTuning, applyCapo } from '@core/tunings';
 import { estimateVoicingDifficulty, searchVoicings } from '@core/voicing-engine';
 import { noteToPc, pcToNote } from '@core/notes';
-import { addRecent, getNote, saveNote, LIBRARY_CHANGE_EVENT } from '@core/storage';
+import { addRecent, getNote, getTabLibraryOwner, isLibraryWriteInProgress, libraryReadIssue, saveNote, LIBRARY_CHANGE_EVENT } from '@core/storage';
 import { chordPath, chordKey as makeKey, fretboardChordPath, instrumentFromSearch, triadStudyPath } from '@/lib/urls';
 import { isTriadQuality } from '@core/triadRelationships';
 import ChordDiagram from '@/components/ChordDiagram';
 import PlayButton from '@/components/PlayButton';
 import EmptyState from '@/components/EmptyState';
+import UnsavedChangesGuard from '@/components/UnsavedChangesGuard';
 import { useFavorites } from '@/hooks/useFavorites';
 import { showToast } from '@/components/Toast';
 
@@ -27,8 +28,8 @@ export default function ChordDetailPage() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const requestedBassName = searchParams.get('bass');
-  const rootName = decodeURIComponent(params.root ?? '');
-  const typeId = decodeURIComponent(params.type ?? '');
+  const rootName = params.root ?? ''; // React Router already decodes route parameters.
+  const typeId = params.type ?? '';
 
   const chord = useMemo<BuiltChord | undefined>(() => {
     try { return buildChord(rootName, typeId); } catch { return undefined; }
@@ -48,14 +49,19 @@ export default function ChordDetailPage() {
   const [pageInput, setPageInput] = useState('1');
   const [bassPc, setBassPc] = useState<number | null>(() => parseBass(requestedBassName));
   const [noteText, setNoteText] = useState('');
+  const [noteView, setNoteView] = useState<{ key: string; owner: string | null }>({ key: '', owner: null });
+  const [noteHasEdits, setNoteHasEdits] = useState(false);
   const [noteConflict, setNoteConflict] = useState(false);
+  const [noteOwnerConflict, setNoteOwnerConflict] = useState(false);
   const noteDirty = useRef(false);
+  const noteOwner = useRef<string | null>(null);
+  const noteTextRef = useRef('');
   const lastSavedNote = useRef('');
-  const { has, toggle } = useFavorites();
+  const { has, toggle, owner: favoritesOwner } = useFavorites();
 
   useEffect(() => {
     if (!chord) return;
-    addRecent({
+    void addRecent({
       key: makeKey(chord.rootName, chord.typeId),
       rootName: chord.rootName,
       typeId: chord.typeId,
@@ -63,9 +69,14 @@ export default function ChordDetailPage() {
     });
     const saved = getNote(makeKey(chord.rootName, chord.typeId));
     lastSavedNote.current = saved;
+    noteOwner.current = getTabLibraryOwner();
+    setNoteView({ key: makeKey(chord.rootName, chord.typeId), owner: noteOwner.current });
     noteDirty.current = false;
+    setNoteHasEdits(false);
     setNoteConflict(false);
+    setNoteOwnerConflict(false);
     setNoteText(saved);
+    noteTextRef.current = saved;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootName, typeId]);
 
@@ -86,9 +97,19 @@ export default function ChordDetailPage() {
   useEffect(() => {
     if (!key) return;
     const refresh = () => {
+      if (isLibraryWriteInProgress()) return;
+      const owner = getTabLibraryOwner();
+      if (owner === null) {
+        if (!noteDirty.current) { lastSavedNote.current = ''; noteTextRef.current = ''; setNoteView({ key, owner: null }); setNoteText(''); }
+        return;
+      }
+      if (noteDirty.current && noteOwner.current === '' && owner) noteOwner.current = owner;
+      const changedOwner = noteDirty.current && noteOwner.current !== owner;
+      setNoteOwnerConflict(changedOwner);
+      if (changedOwner) return;
       const saved = getNote(key);
       if (noteDirty.current && saved !== lastSavedNote.current) setNoteConflict(true);
-      else if (!noteDirty.current) { lastSavedNote.current = saved; setNoteText(saved); }
+      else if (!noteDirty.current) { lastSavedNote.current = saved; noteTextRef.current = saved; setNoteView({ key, owner }); setNoteText(saved); }
     };
     window.addEventListener(LIBRARY_CHANGE_EVENT, refresh);
     window.addEventListener('storage', refresh);
@@ -160,6 +181,7 @@ export default function ChordDetailPage() {
 
   return (
     <div className="page chord-detail-page">
+      <UnsavedChangesGuard when={noteHasEdits} message="Discard your unsaved chord note?" />
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <Link to="/">Home</Link> <span>/</span>{' '}
         <Link to="/chords">Chords</Link> <span>/</span>{' '}
@@ -178,8 +200,9 @@ export default function ChordDetailPage() {
             type="button"
             className={`btn ${favorite ? '' : 'btn-ghost'}`}
             aria-pressed={favorite}
-            onClick={() => {
-              const nowFav = toggle(key);
+            onClick={async () => {
+              const nowFav = await toggle(key);
+              if (nowFav === null) { showToast(getTabLibraryOwner() !== favoritesOwner ? 'The account changed. Review this favorite before trying again.' : libraryReadIssue() ?? 'Could not save the favorite on this device. Check browser storage.'); return; }
               showToast(nowFav ? `Saved ${chord.shortName} to your library` : `Removed ${chord.shortName} from favorites`);
             }}
           >
@@ -410,21 +433,44 @@ export default function ChordDetailPage() {
         <h2>Your notes on {chord.shortName}</h2>
         <textarea
           rows={3}
+          maxLength={50000}
           placeholder="Fingerings, song references, or practice reminders…"
           value={noteText}
-          onChange={(e) => { noteDirty.current = true; setNoteText(e.target.value); }}
+          disabled={noteView.key !== key}
+          onChange={(e) => {
+            const owner = getTabLibraryOwner();
+            const wasDirty = noteDirty.current;
+            if (!wasDirty) noteOwner.current = noteView.owner;
+            noteTextRef.current = e.target.value;
+            // Retyping the original account's saved text does not make that
+            // text a draft belonging to a different (or not-yet-known) owner.
+            noteDirty.current = e.target.value !== lastSavedNote.current || (owner !== null && owner !== noteOwner.current) || (owner === null && wasDirty);
+            setNoteHasEdits(noteDirty.current); setNoteText(e.target.value);
+          }}
           aria-label="Personal notes for this chord"
         />
+        {noteOwnerConflict && <p className="small" role="status">{noteOwner.current === null ? 'The account was changing when this draft started. It cannot be safely assigned; copy the draft before starting over.' : 'The account changed while this draft was open. Switch back to its original account or copy the draft before starting over.'}</p>}
         {noteConflict && <p className="small" role="status">The saved note changed on another device. Your unsaved edits are still here; saving will replace that version.</p>}
         <div className="row" style={{ marginTop: '0.6rem' }}>
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            onClick={() => {
-              lastSavedNote.current = noteText.trim() ? noteText : '';
-              noteDirty.current = false;
+            onClick={async () => {
+              const savedText = noteText;
+              const owner = noteDirty.current ? noteOwner.current : noteView.owner;
+              const changedAccount = 'The account changed while this draft was open. Switch back to its original account or copy the draft before starting over.';
+              if (noteView.key !== key) { showToast('This note is still loading. Please try again.'); return; }
+              if (owner === null) { showToast('The account was changing when this draft started. It cannot be safely assigned; copy the draft before starting over.'); return; }
+              const currentOwner = getTabLibraryOwner();
+              if (currentOwner === null) { showToast('The library is temporarily unavailable. Your draft is still here; wait or sign out and try again.'); return; }
+              if (currentOwner !== owner) { showToast(changedAccount); return; }
+              if (!await saveNote(key, savedText, owner)) { showToast(getTabLibraryOwner() !== owner ? changedAccount : libraryReadIssue() ?? 'Could not save the note on this device. Check browser storage.'); return; }
+              if (getTabLibraryOwner() !== owner) { showToast(`${changedAccount} It may have saved to the original account.`); return; }
+              setNoteView({ key, owner });
+              lastSavedNote.current = savedText.trim() ? savedText : '';
+              noteDirty.current = noteTextRef.current !== savedText;
+              setNoteHasEdits(noteDirty.current);
               setNoteConflict(false);
-              saveNote(key, noteText);
               showToast('Note saved');
             }}
           >

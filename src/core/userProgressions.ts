@@ -111,6 +111,7 @@ export function estimateProgressionDifficulty(chords: ProgressionStep[], capo: n
 export function validProgression(value: unknown, expectedId?: string): value is SavedProgression {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Partial<SavedProgression>;
+  if (Object.keys(item).some((key) => !['id', 'name', 'tuningId', 'capo', 'bpm', 'loop', 'difficulty', 'difficultyMode', 'pattern', 'chords'].includes(key))) return false;
   if (typeof item.id !== 'string' || !item.id || item.id.length > 180 || (expectedId && item.id !== expectedId)) return false;
   if (typeof item.name !== 'string' || !item.name.trim() || item.name.length > 100) return false;
   if (typeof item.tuningId !== 'string' || !TUNINGS.some((tuning) => tuning.id === item.tuningId)) return false;
@@ -122,7 +123,7 @@ export function validProgression(value: unknown, expectedId?: string): value is 
   if (item.pattern !== undefined && !validPlaybackPattern(item.pattern, tuning.strings.length)) return false;
   const ids = new Set<string>();
   return item.chords.every((chord) => {
-    if (!chord || typeof chord.id !== 'string' || !chord.id || chord.id.length > 180 || ids.has(chord.id)) return false;
+    if (!chord || typeof chord !== 'object' || Array.isArray(chord) || Object.keys(chord).some((key) => !['id', 'name', 'frets', 'beats'].includes(key)) || typeof chord.id !== 'string' || !chord.id || chord.id.length > 180 || ids.has(chord.id)) return false;
     ids.add(chord.id);
     if (typeof chord.name !== 'string' || !chord.name.trim() || chord.name.length > 100) return false;
     if (!Number.isInteger(chord.beats) || chord.beats < 1 || chord.beats > 16) return false;

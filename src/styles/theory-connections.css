@@ -14,6 +14,12 @@
 .theory-study-link > div { display: flex; flex-direction: column; }
 .theory-study-link strong { color: var(--cream); font-size: 0.86rem; }
 .theory-study-link span { color: var(--text-dim); font-size: 0.76rem; }
+.theory-practice-path { margin: 0 0 1.5rem; padding: 0.2rem 0 1rem; border-bottom: 1px solid var(--line); max-width: 70ch; }
+.theory-practice-path h2 { font-size: 1.2rem; }
+.theory-practice-path p, .theory-practice-path li { line-height: 1.55; }
+.theory-practice-path ol { padding-left: 1.4rem; }
+.theory-practice-path li { margin: 0.45rem 0; }
+.theory-practice-path a { text-decoration: underline; text-underline-offset: 0.15em; }
 .lesson-connection { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin: 1.5rem 0; padding: 1rem 1.1rem; border-left: 2px solid var(--brass); background: #25271f; }
 .lesson-connection div { max-width: 55ch; }
 .lesson-connection strong { color: var(--cream); }

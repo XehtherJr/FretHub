@@ -24,12 +24,46 @@ Use Node.js **22.12 or later** (Node 22 LTS is recommended; `.nvmrc` is provided
 
 ```bash
 npm ci
-npm run dev        # http://localhost:5173
+npm run dev        # http://127.0.0.1:5173
 npm test           # unit and interaction tests
 npm run typecheck  # strict TypeScript check
 npm run build      # production output in dist/
-npm run preview    # serve the production build
+npm run preview    # serve the production build at http://127.0.0.1:4173
 ```
+
+The dev and preview servers bind to **127.0.0.1** by default and reject other DNS hostnames unless
+explicitly allowed. Vite also accepts `localhost`, `.localhost` names and IP-literal Host headers;
+network binding and a trusted proxy therefore remain important. To share one deliberately behind a
+trusted HTTPS proxy, supply the exact proxy hostname (or a comma-separated list) and explicitly bind
+the server to a network interface, for example:
+
+```bash
+FRETHUB_ALLOWED_HOSTS=preview.example.com npm run dev -- --host 0.0.0.0
+```
+
+Do not use `true`, wildcards, URLs, IP addresses or suffix-wide host permissions. Set this as a shell
+environment variable, not a Vite client variable. Exposing the dev server can reveal local source
+and files; use a trusted network/proxy, and remove the opt-in when finished. Production builds are
+static files and should be served by a properly configured host, not Vite's development server.
+
+### Automated verification
+
+```bash
+npx playwright install chromium  # once; Linux may also need: npx playwright install-deps chromium
+npm run test:e2e                # builds, serves and tests a production build in Chromium
+```
+
+The GitHub Actions workflow runs unit/interaction tests, TypeScript, a production build and the
+browser suite on pushes and pull requests. Browser tests use a loopback preview, fake Supabase
+configuration and an intercepted in-memory service; external browser requests and service workers
+are blocked. The browser suite writes its fake build to the ignored `.e2e-dist/` directory, separate
+from `dist/`. Tests cover two isolated browser contexts with a forced revision race, v2 migration,
+pattern save/reload and Web Audio scheduling, learning navigation, a synthetic tuner signal, and
+host restrictions. Chromium uses a fake microphone and auto-accepts its permission UI; a browser
+Permissions Policy supplies the real denied-access error path. This does not test a physical
+microphone or the user's browser permission prompt. These tests are not a live Supabase test, a
+human audio audition, or evidence of learning. See the [guitarist study protocol](docs/guitarist-study.md)
+for a proposed usability and delayed-recall study; it contains no results.
 
 The static app works without any environment variables. The tuner and timing coach require a
 secure context (HTTPS or localhost), Web Audio and a microphone permission grant. They process
@@ -104,19 +138,36 @@ verification require a reachable mailbox, approved redirect URLs and working ema
 app cannot make those guarantees on an unconfigured deployment. Avoid using the library for sensitive
 information, use a unique password, protect shared devices, and configure appropriate abuse controls.
 The rollback-only [`supabase/tests/optional_email_verification.sql`](supabase/tests/optional_email_verification.sql)
-checks the server proof rules on a test database without sending mail.
+checks the server proof rules on a test database without sending mail. The read-only
+[`supabase/tests/library_read_rls.sql`](supabase/tests/library_read_rls.sql) checks owner and
+non-owner read visibility using simulated claims when at least one library row exists; it does not
+exercise real authentication, write policies, or two-device sync.
 
 The first account used on a device adopts its guest library. Later account switches keep separate
 local library copies; signing out leaves the last copy available locally, and signing into that same
 account merges any subsequent guest edits. Favorites, notes, lesson challenges and progressions use
 per-item timestamps and deletion markers; revision-checked writes retry concurrent changes. Changes
 sync after edits, on focus/reconnection, or with **Sync now**. If the same item changes on multiple
-devices, the latest item timestamp wins, so device clocks should be reasonably accurate. Recent
-chords and practice quiz totals stay on the device rather than syncing. Clearing site data removes
-local copies, including changes that have not synced; do so on shared devices after signing out if
-privacy matters. Sync is not a backup. Version-1 and version-2 snapshots are upgraded without
-changing existing progression playback. Older app versions cannot safely read version-3 snapshots
-with picking patterns and must be updated rather than allowed to overwrite them.
+devices, one version wins according to device timestamps (with a deterministic tie-break); simultaneous
+edits to the same item can overwrite one another, especially if clocks differ. Sync before editing
+on another device and avoid editing the same item concurrently. The exact policy and its limits are
+in [sync conflict policy](docs/sync-conflicts.md). Unsupported or malformed cloud **and local**
+library data stop writes/sync rather than being silently discarded; the original local or cloud
+data are left in place. A note or progression draft stays tied to the account where it was started;
+if the account changes, switch back or copy the draft before starting over. Current FretHub tabs
+coordinate account changes and local edits through IndexedDB, and a write-ahead journal allows interrupted multi-key writes to be rolled back. If coordination or recovery
+is unavailable, writes fail rather than proceeding without the lock. This is not a substitute for a
+backup: storage failures can prevent recovery until storage is available again. Refresh or close **all**
+older app tabs after updating, because older clients do not participate in this coordination and can
+still interfere. Recent chords and practice quiz totals stay on the device rather than syncing. Clearing
+site data removes local copies and any recovery journal, including changes that have not synced; do so
+on shared devices after signing out if privacy matters. Sync is not a backup. Version-1 and version-2
+snapshots are upgraded without changing existing progression playback. Older app versions cannot safely
+read version-3 snapshots with picking patterns and must be updated rather than allowed to overwrite them.
+
+See [staging validation](docs/staging-validation.md) for the checks still required with real auth,
+email, devices and microphones, and [performance notes](docs/performance-notes.md) for the measured
+local baseline and its limitations.
 
 #### Configure production email
 

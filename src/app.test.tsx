@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import App from './App';
 import { playClick, playMidi, playSequence, strum } from '@core/audio';
@@ -27,7 +27,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('application routing and rendering', () => {
   it('renders the home page with destinations and playable chord references', () => {
@@ -682,7 +682,7 @@ describe('application routing and rendering', () => {
     expect(screen.getByRole('link', { name: /C7#5.*Augmented dominant seventh/ })).toBeInTheDocument();
   });
 
-  it('teaches beginners with a glossary, playable strings and a saved challenge', () => {
+  it('teaches beginners with a glossary, playable strings and a saved challenge', async () => {
     renderAt('/theory/meet-your-guitar');
     expect(screen.getByRole('heading', { name: 'Meet your guitar' })).toBeInTheDocument();
     const pitch = screen.getAllByRole('button', { name: /^pitch$/i })[0];
@@ -692,7 +692,7 @@ describe('application routing and rendering', () => {
     expect(playMidi).toHaveBeenCalledWith(40);
     fireEvent.click(screen.getByRole('button', { name: 'String 1, high E' }));
     expect(screen.getByText(/You got it/)).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem('frethub:lessons-complete') ?? '[]')).toContain('meet-your-guitar');
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('frethub:lessons-complete') ?? '[]')).toContain('meet-your-guitar'));
   });
 
   it('renders the standalone tuner and selectable reference strings', () => {
@@ -714,18 +714,57 @@ describe('application routing and rendering', () => {
     expect(screen.getByLabelText('Silent bars')).toBeInTheDocument();
   });
 
-  it('keeps unsaved chord-note edits when a remote note arrives', () => {
+  it('reports local-storage failures without claiming a favorite or note was saved', async () => {
+    renderAt('/chords/C/major');
+    const original = Storage.prototype.setItem;
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    const saveFavorite = screen.getByRole('button', { name: /☆ Save/ });
+    fireEvent.click(saveFavorite);
+    expect(await screen.findByText(/Could not save the favorite on this device/)).toBeInTheDocument();
+    expect(saveFavorite).toHaveAttribute('aria-pressed', 'false');
+    const note = screen.getByRole('textbox', { name: 'Personal notes for this chord' });
+    fireEvent.change(note, { target: { value: 'Keep this draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(await screen.findByText(/Could not save the note on this device/)).toBeInTheDocument();
+    expect(note).toHaveValue('Keep this draft');
+    expect(getNote('C|major')).toBe('');
+    fail.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(getNote('C|major')).toBe('Keep this draft'));
+  });
+
+  it('does not claim a correct lesson answer was saved when storage fails', async () => {
+    renderAt('/theory/meet-your-guitar');
+    const original = Storage.prototype.setItem;
+    const fail = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'frethub:sync-meta') throw new Error('quota');
+      return original.call(this, key, value);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'String 1, high E' }));
+    expect(screen.getByText(/You got it/)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/progress could not be saved/);
+    expect(JSON.parse(localStorage.getItem('frethub:lessons-complete') ?? '[]')).not.toContain('meet-your-guitar');
+    fail.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'String 1, high E' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('frethub:lessons-complete') ?? '[]')).toContain('meet-your-guitar'));
+  });
+
+  it('keeps unsaved chord-note edits when a remote note arrives', async () => {
     renderAt('/chords/C/major');
     const textarea = screen.getByRole('textbox', { name: 'Personal notes for this chord' });
     const incoming = (text: string, modified: number) => ({ ...emptySnapshot(), notes: { 'C|major': { value: text, modified } } });
-    act(() => applyLibrarySnapshot(incoming('From another device', 10)));
+    await act(async () => { await applyLibrarySnapshot(incoming('From another device', 10)); });
     expect(textarea).toHaveValue('From another device');
     fireEvent.change(textarea, { target: { value: 'My unsaved version' } });
-    act(() => applyLibrarySnapshot(incoming('A newer cloud note', 20)));
+    await act(async () => { await applyLibrarySnapshot(incoming('A newer cloud note', 20)); });
     expect(textarea).toHaveValue('My unsaved version');
     expect(screen.getByText(/The saved note changed on another device/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
-    expect(getNote('C|major')).toBe('My unsaved version');
+    await waitFor(() => expect(getNote('C|major')).toBe('My unsaved version'));
   });
 
   it('keeps the library usable without an account', () => {

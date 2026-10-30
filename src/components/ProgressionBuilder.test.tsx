@@ -64,6 +64,7 @@ describe('fretboard progression builder', () => {
     expect(within(grade).getAllByRole('option').map((option) => option.textContent)).toEqual(['Automatic estimate', 'Beginner', 'Novice', 'Intermediate', 'Advanced']);
     fireEvent.change(grade, { target: { value: 'advanced' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     expect(getProgressions()[0]).toMatchObject({ name: 'Morning practice', difficulty: 'advanced', difficultyMode: 'manual', loop: true });
     expect(getProgressions()[0].chords.map((chord) => chord.name)).toEqual(['G', 'C']);
     expect(screen.getByText(/Saved on this device/)).toBeInTheDocument();
@@ -80,10 +81,10 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('group', { name: /Interactive guitar fretboard/ }).querySelectorAll('[aria-pressed="true"]').length).toBe(6);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Delete Morning practice' }));
-    expect(getProgressions()).toEqual([]);
-  });
+    await waitFor(() => expect(getProgressions()).toEqual([]));
+  }, 15_000); // This full round trip performs many real fretboard interactions.
 
-  it('puts Add beside the neck actions and uses a typed chord name to generate the shape', () => {
+  it('puts Add beside the neck actions and uses a typed chord name to generate the shape', async () => {
     renderBuilder();
     const arpeggiate = screen.getByRole('button', { name: 'Arpeggiate selection' });
     const add = screen.getByRole('button', { name: 'Add selected chord' });
@@ -99,7 +100,7 @@ describe('fretboard progression builder', () => {
     expect(lowest % 12).toBe(2); // D is the actual sounding bass, including in alternate tunings.
   });
 
-  it('plays and saves the requested mixed-string picking pattern, and restores it when loaded', () => {
+  it('plays and saves the requested mixed-string picking pattern, and restores it when loaded', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -117,6 +118,7 @@ describe('fretboard progression builder', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
     fireEvent.change(screen.getByLabelText('Progression name'), { target: { value: 'Picking idea' } });
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     expect(getProgressions()[0].pattern).toMatchObject({ mode: 'custom', stepsPerBeat: 2 });
     fireEvent.click(screen.getByRole('button', { name: 'New progression' }));
     fireEvent.click(screen.getByRole('button', { name: 'Load Picking idea' }));
@@ -125,7 +127,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByLabelText('Step timing')).toHaveValue('2');
   });
 
-  it('starts a button-built custom pattern empty and plays exactly those steps on two four-beat chords', () => {
+  it('starts a button-built custom pattern empty and plays exactly those steps on two four-beat chords', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -156,7 +158,7 @@ describe('fretboard progression builder', () => {
     ] });
   });
 
-  it('explains steps that cannot fit and picked strings muted in a chord', () => {
+  it('explains steps that cannot fit and picked strings muted in a chord', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -180,7 +182,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('button', { name: 'Play progression' })).toBeEnabled();
   });
 
-  it('builds simultaneous picks, strums and rests with buttons and blocks invalid patterns', () => {
+  it('builds simultaneous picks, strums and rests with buttons and blocks invalid patterns', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -206,7 +208,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
   });
 
-  it('protects unadded string selections and clears them when a saved pattern is loaded', () => {
+  it('protects unadded string selections and clears them when a saved pattern is loaded', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -215,6 +217,7 @@ describe('fretboard progression builder', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
     fireEvent.change(screen.getByLabelText('Progression name'), { target: { value: 'My pattern' } });
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByText('Build steps with buttons'));
     fireEvent.click(screen.getByLabelText('3 · G3'));
     expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
@@ -239,7 +242,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('button', { name: 'Play progression' })).toBeEnabled();
   });
 
-  it('preserves pending string numbers across tuning changes and explains unavailable strings', () => {
+  it('preserves pending string numbers across tuning changes and explains unavailable strings', async () => {
     renderBuilder();
     fireEvent.change(screen.getByLabelText('Playback style'), { target: { value: 'custom' } });
     fireEvent.click(screen.getByText('Build steps with buttons'));
@@ -252,7 +255,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByText(/Some selected strings are unavailable in this tuning and were cleared/)).toBeVisible();
   });
 
-  it('uses a repeating arpeggio while retaining the original one-strum behavior for older saves', () => {
+  it('uses a repeating arpeggio while retaining the original one-strum behavior for older saves', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -262,7 +265,7 @@ describe('fretboard progression builder', () => {
     expect(vi.mocked(startProgressionPlayback).mock.calls[0][4]).toEqual({ mode: 'arpeggio', stepsPerBeat: 4 });
   });
 
-  it('does not silently label an unrelated selected shape as a typed chord', () => {
+  it('does not silently label an unrelated selected shape as a typed chord', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.change(screen.getByLabelText('Chord name'), { target: { value: 'Am' } });
@@ -273,10 +276,11 @@ describe('fretboard progression builder', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     expect(getProgressions()[0].chords[0]).toMatchObject({ name: 'Am', frets: [null, 3, 2, 0, 1, 0] });
   });
 
-  it('cancels the save dialog without changing the draft and restores focus', () => {
+  it('cancels the save dialog without changing the draft and restores focus', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
@@ -294,7 +298,7 @@ describe('fretboard progression builder', () => {
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Cancel' }));
   });
 
-  it('loads an adjustable generated chord, edits it, and keeps a draft when switching tabs', () => {
+  it('loads an adjustable generated chord, edits it, and keeps a draft when switching tabs', async () => {
     renderBuilder();
     fireEvent.click(screen.getByRole('button', { name: 'Choose root & type' }));
     fireEvent.change(screen.getByLabelText('Chord root'), { target: { value: 'A' } });
@@ -311,12 +315,13 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('button', { name: 'Edit chord 1, My Am shape' })).toBeInTheDocument();
   });
 
-  it('protects an unfinished chord edit from being played, saved or discarded silently', () => {
+  it('protects an unfinished chord edit from being played, saved or discarded silently', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Edit chord 1, C' }));
     fireEvent.change(screen.getByLabelText('Chord name'), { target: { value: 'Edited C' } });
     expect(screen.getByRole('button', { name: 'Play progression' })).toBeDisabled();
@@ -330,7 +335,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('button', { name: 'Edit chord 1, Edited C' })).toBeInTheDocument();
   });
 
-  it('does not keep a generated name after the shape is replaced manually', () => {
+  it('does not keep a generated name after the shape is replaced manually', async () => {
     const board = renderBuilder();
     fireEvent.click(screen.getByRole('button', { name: 'Choose root & type' }));
     fireEvent.change(screen.getByLabelText('Chord root'), { target: { value: 'A' } });
@@ -345,7 +350,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByRole('button', { name: 'Edit chord 1, C' })).toBeInTheDocument();
   });
 
-  it('does not reuse a hidden chord-finder root hint when naming a progression', () => {
+  it('does not reuse a hidden chord-finder root hint when naming a progression', async () => {
     const board = renderBuilder();
     fireEvent.click(screen.getByRole('tab', { name: 'Identify a chord' }));
     fireEvent.change(screen.getByLabelText('Root hint (optional)'), { target: { value: '5' } });
@@ -354,7 +359,7 @@ describe('fretboard progression builder', () => {
     expect(screen.getByLabelText('Chord name')).toHaveAttribute('placeholder', 'C');
   });
 
-  it('restores a saved alternate tuning, capo and exact physical shape', () => {
+  it('restores a saved alternate tuning, capo and exact physical shape', async () => {
     renderBuilder();
     fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'drop-d' } });
     fireEvent.change(screen.getByLabelText('Capo', { exact: true }), { target: { value: '2' } });
@@ -363,6 +368,7 @@ describe('fretboard progression builder', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
     fireEvent.change(screen.getByLabelText('Progression name'), { target: { value: 'Drop D idea' } });
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     const item = getProgressions()[0];
     expect(item).toMatchObject({ tuningId: 'drop-d', capo: 2 });
     fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'standard' } });
@@ -376,7 +382,7 @@ describe('fretboard progression builder', () => {
     ], 90, false, expect.any(Object));
   });
 
-  it('keeps pattern string identities and sounding frets correct with alternate tuning and capo', () => {
+  it('keeps pattern string identities and sounding frets correct with alternate tuning and capo', async () => {
     renderBuilder();
     fireEvent.change(screen.getByLabelText('Tuning'), { target: { value: 'drop-d' } });
     fireEvent.change(screen.getByLabelText('Capo', { exact: true }), { target: { value: '2' } });
@@ -386,6 +392,7 @@ describe('fretboard progression builder', () => {
     fireEvent.change(screen.getByLabelText('Pattern steps'), { target: { value: 'D2 D3 E4' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save progression' }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Save progression' })).getByRole('button', { name: 'Save progression' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Save progression' })).not.toBeInTheDocument());
     const item = getProgressions()[0];
     expect(item.pattern).toEqual({ mode: 'custom', stepsPerBeat: 2, steps: [
       { kind: 'pick', strings: [0] }, { kind: 'pick', strings: [2] }, { kind: 'pick', strings: [5] },
@@ -396,7 +403,7 @@ describe('fretboard progression builder', () => {
     ], 90, false, expect.any(Object), item.pattern);
   });
 
-  it('protects an existing sequence from mixing capo or tuning setups', () => {
+  it('protects an existing sequence from mixing capo or tuning setups', async () => {
     const board = renderBuilder();
     choose(board, cShape);
     fireEvent.click(screen.getByRole('button', { name: 'Add selected chord' }));

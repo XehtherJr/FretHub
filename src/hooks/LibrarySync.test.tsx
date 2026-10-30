@@ -5,7 +5,8 @@ import { LibrarySyncProvider } from './LibrarySync';
 import LibraryPage from '@/pages/LibraryPage';
 import AccountRecoveryPage from '@/pages/AccountRecoveryPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
-import { switchLibraryOwner } from '@core/storage';
+import { LIBRARY_JOURNAL_KEY, switchLibraryOwner, toggleFavorite } from '@core/storage';
+import { LIBRARY_FENCE_KEY } from '@core/libraryLock';
 
 const mocks = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
@@ -115,7 +116,7 @@ describe('optional account onboarding', () => {
     render(<LibrarySyncProvider><MemoryRouter><LibraryPage /></MemoryRouter></LibrarySyncProvider>);
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
     act(() => authChange?.('SIGNED_IN', { user: { id: 'user-1', email: 'player@example.com' } }));
-    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(mocks.signOut).toHaveBeenCalled());
     act(() => authChange?.('SIGNED_OUT', null));
     expect(await screen.findByRole('button', { name: 'Sign in to sync' })).toBeInTheDocument();
@@ -137,10 +138,42 @@ describe('optional account onboarding', () => {
     await waitFor(() => expect(mocks.syncLibrary).toHaveBeenCalledTimes(1));
     const isCurrent = mocks.syncLibrary.mock.calls[0][2] as () => boolean;
     expect(isCurrent()).toBe(true);
-    act(() => { expect(switchLibraryOwner('user-2')).toBe(true); window.dispatchEvent(new Event('storage')); });
+    await act(async () => { expect(await switchLibraryOwner('user-2')).toBe(true); window.dispatchEvent(new Event('storage')); });
     expect(isCurrent()).toBe(false);
     expect(await screen.findByText(/local library changed in another tab/)).toBeInTheDocument();
     expect(mocks.syncLibrary).toHaveBeenCalledTimes(1);
+  });
+  it('does not sync again for internal coordination-only storage events', async () => {
+    let authChange: ((event: string, session: unknown) => void) | undefined;
+    mocks.onAuthStateChange.mockImplementation((listener) => { authChange = listener; listener('INITIAL_SESSION', null); return { data: { subscription: { unsubscribe: vi.fn() } } }; });
+    render(<LibrarySyncProvider><MemoryRouter><LibraryPage /></MemoryRouter></LibrarySyncProvider>);
+    act(() => authChange?.('SIGNED_IN', { user: { id: 'user-1', email: 'player@example.com' } }));
+    await waitFor(() => expect(mocks.syncLibrary).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: LIBRARY_FENCE_KEY }));
+      window.dispatchEvent(new StorageEvent('storage', { key: LIBRARY_JOURNAL_KEY }));
+      // Any mistakenly scheduled zero-delay sync runs before this real timer.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.syncLibrary).toHaveBeenCalledTimes(1);
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'frethub:favorites' })));
+    await waitFor(() => expect(mocks.syncLibrary).toHaveBeenCalledTimes(2));
+  });
+  it('blocks the previous account locally when an authenticated switch cannot safely complete', async () => {
+    let authChange: ((event: string, session: unknown) => void) | undefined;
+    mocks.onAuthStateChange.mockImplementation((listener) => { authChange = listener; listener('INITIAL_SESSION', null); return { data: { subscription: { unsubscribe: vi.fn() } } }; });
+    render(<LibrarySyncProvider><MemoryRouter><LibraryPage /></MemoryRouter></LibrarySyncProvider>);
+    act(() => authChange?.('SIGNED_IN', { user: { id: 'user-1', email: 'first@example.com' } }));
+    await waitFor(() => expect(mocks.syncLibrary).toHaveBeenCalledTimes(1));
+    await act(async () => { expect(await toggleFavorite('C|major')).toBe(true); });
+    localStorage.setItem('frethub:account-library:user-2', JSON.stringify({ version: 4, future: true }));
+    act(() => authChange?.('SIGNED_IN', { user: { id: 'user-2', email: 'second@example.com' } }));
+    expect(await screen.findByText(/Could not safely switch libraries/)).toBeInTheDocument();
+    expect(await toggleFavorite('G|major')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('frethub:favorites')!)).toEqual(['C|major']);
+    expect(JSON.parse(localStorage.getItem('frethub:account-library:user-2')!)).toEqual({ version: 4, future: true });
+    act(() => authChange?.('SIGNED_OUT', null));
+    await act(async () => { expect(await toggleFavorite('D|major')).toBe(true); }); // Signing out restores the last local copy, as documented.
   });
   it('loads and syncs a signed-in user without losing the guest-first path', async () => {
     let authChange: ((event: string, session: unknown) => void) | undefined;
@@ -162,7 +195,7 @@ describe('account link callbacks', () => {
     act(() => authChange?.('SIGNED_IN', { user: { id: 'user-1', email: 'player@example.com' }, access_token: 'password-token' }));
     expect(screen.queryByLabelText('New password')).not.toBeInTheDocument();
     act(() => authChange?.('PASSWORD_RECOVERY', { user: { id: 'user-1', email: 'player@example.com' }, access_token: 'recovery-token' }));
-    expect(screen.getByText(/Choose a new password for/)).toHaveTextContent('player@example.com');
+    expect(await screen.findByText(/Choose a new password for/)).toHaveTextContent('player@example.com');
     fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password' } });
     fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'does-not-match' } });
     fireEvent.click(screen.getByRole('button', { name: 'Update password' }));
@@ -174,11 +207,11 @@ describe('account link callbacks', () => {
     expect(await screen.findByText('Your password has been updated.')).toBeInTheDocument();
   });
 
-  it('can resume a recovered session after a refresh even when the recovery event was missed', () => {
+  it('can resume a recovered session after a refresh even when the recovery event was missed', async () => {
     const payload = btoa(JSON.stringify({ amr: [{ method: 'recovery', timestamp: 100 }] })).replace(/=+$/, '');
     mocks.onAuthStateChange.mockImplementation((listener) => { listener('INITIAL_SESSION', { user: { id: 'user-1', email: 'player@example.com' }, access_token: `header.${payload}.signature` }); return { data: { subscription: { unsubscribe: vi.fn() } } }; });
     render(<LibrarySyncProvider><MemoryRouter><AccountRecoveryPage /></MemoryRouter></LibrarySyncProvider>);
-    expect(screen.getByLabelText('New password')).toBeInTheDocument();
+    expect(await screen.findByLabelText('New password')).toBeInTheDocument();
   });
 
   it('requires the server to accept the email proof; a signed-in password alone is not a verified badge', async () => {
