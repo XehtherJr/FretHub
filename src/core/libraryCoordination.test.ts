@@ -31,6 +31,22 @@ it('waits for a stale localStorage fence before reading or writing library data'
   expect(operation).toHaveBeenCalledOnce();
 });
 
+it('can finish a fence retry when the test clock changes during an in-flight lock', async () => {
+  await withLibraryLock(() => true);
+  const realGet = Storage.prototype.getItem;
+  let stale = true;
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
+    if (key === LIBRARY_FENCE_KEY && stale) { stale = false; return 'stale-renderer-cache'; }
+    return realGet.call(this, key);
+  });
+  const realSetTimeout = globalThis.setTimeout;
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation(((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (delay === 20) throw new Error('test clock intercepted the fence retry');
+    return realSetTimeout(handler, delay, ...args);
+  }) as typeof globalThis.setTimeout);
+  expect(await withLibraryLock(() => 'done')).toBe('done');
+});
+
 it('fails closed if a coordination fence exists without its corresponding database state', async () => {
   localStorage.setItem(LIBRARY_FENCE_KEY, 'orphaned-fence');
   localStorage.setItem('frethub:favorites', JSON.stringify(['C|major']));

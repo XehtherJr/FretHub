@@ -9,6 +9,8 @@ const STORE = 'mutex';
 export const LIBRARY_FENCE_KEY = 'frethub:library-coordination-v1';
 const RETRIES = 100;
 const RETRY_MS = 20;
+// In-flight retries must not be stranded if a test replaces its clock.
+const scheduleRetry = globalThis.setTimeout.bind(globalThis);
 let database: Promise<IDBDatabase> | undefined;
 const pendingLocks = new Set<Promise<unknown>>();
 
@@ -86,7 +88,7 @@ async function runWithLibraryLock<T>(operation: () => T): Promise<T> {
   for (let retry = 0; retry < RETRIES; retry++) {
     const result = await attempt(db, operation);
     if (result.done) return result.value;
-    await new Promise<void>((resolve) => setTimeout(resolve, RETRY_MS));
+    await new Promise<void>((resolve) => scheduleRetry(resolve, RETRY_MS));
   }
   throw new Error('Library coordination could not be synchronized. Preserve local data and refresh all tabs before trying again.');
 }

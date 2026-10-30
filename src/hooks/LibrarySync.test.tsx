@@ -149,20 +149,15 @@ describe('optional account onboarding', () => {
     render(<LibrarySyncProvider><MemoryRouter><LibraryPage /></MemoryRouter></LibrarySyncProvider>);
     act(() => authChange?.('SIGNED_IN', { user: { id: 'user-1', email: 'player@example.com' } }));
     await waitFor(() => expect(mocks.syncLibrary).toHaveBeenCalledTimes(1));
-    vi.useFakeTimers();
-    try {
-      await act(async () => {
-        window.dispatchEvent(new StorageEvent('storage', { key: LIBRARY_FENCE_KEY }));
-        window.dispatchEvent(new StorageEvent('storage', { key: LIBRARY_JOURNAL_KEY }));
-        await vi.advanceTimersByTimeAsync(100);
-      });
-      expect(mocks.syncLibrary).toHaveBeenCalledTimes(1);
-      await act(async () => {
-        window.dispatchEvent(new StorageEvent('storage', { key: 'frethub:favorites' }));
-        await vi.advanceTimersByTimeAsync(100);
-      });
-      expect(mocks.syncLibrary).toHaveBeenCalledTimes(2);
-    } finally { vi.useRealTimers(); }
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: LIBRARY_FENCE_KEY }));
+      window.dispatchEvent(new StorageEvent('storage', { key: LIBRARY_JOURNAL_KEY }));
+      // Any mistakenly scheduled zero-delay sync runs before this real timer.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(mocks.syncLibrary).toHaveBeenCalledTimes(1);
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'frethub:favorites' })));
+    await waitFor(() => expect(mocks.syncLibrary).toHaveBeenCalledTimes(2));
   });
   it('blocks the previous account locally when an authenticated switch cannot safely complete', async () => {
     let authChange: ((event: string, session: unknown) => void) | undefined;
