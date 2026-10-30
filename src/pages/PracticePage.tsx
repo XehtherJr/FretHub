@@ -174,6 +174,7 @@ function NoteQuiz({ onAnswered }: { onAnswered: (correct: boolean, streak: numbe
 export default function PracticePage() {
   const [tab, setTab] = useState<Tab>('chord-quiz');
   const [progress, setProgress] = useState(() => getQuizProgress());
+  const [progressError, setProgressError] = useState(false);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'chord-quiz', label: 'Chord ID quiz' },
@@ -183,7 +184,7 @@ export default function PracticePage() {
   ];
 
   const answered = (correct: boolean, streak: number) => {
-    setProgress(recordQuizAnswer(correct, streak));
+    void recordQuizAnswer(correct, streak).then((saved) => { if (saved) { setProgress(saved); setProgressError(false); } else setProgressError(true); });
   };
 
   const accuracy = progress.answered
@@ -201,6 +202,7 @@ export default function PracticePage() {
           {accuracy !== null && <> ({accuracy}%)</>}, best streak {progress.bestStreak}.</>
         )}
       </p>
+      {progressError && <p role="alert" className="small">This answer could not be saved on this device. Your existing practice totals were not intentionally changed; check browser storage.</p>}
 
       <div className="row" role="tablist" aria-label="Practice tools" style={{ marginBottom: '1rem' }}>
         {tabs.map((t) => (

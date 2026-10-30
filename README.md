@@ -150,14 +150,24 @@ per-item timestamps and deletion markers; revision-checked writes retry concurre
 sync after edits, on focus/reconnection, or with **Sync now**. If the same item changes on multiple
 devices, one version wins according to device timestamps (with a deterministic tie-break); simultaneous
 edits to the same item can overwrite one another, especially if clocks differ. Sync before editing
-on another device and avoid editing the same item concurrently. Unrecognized or malformed cloud
-records stop sync instead of being silently dropped. Local multi-key writes attempt rollback on
-failure, but browser storage is not transactional across tabs and rollback can fail if storage remains
-unavailable. Recent chords and practice quiz totals stay on the device rather than syncing. Clearing
-site data removes local copies, including changes that have not synced; do so on shared devices after
-signing out if privacy matters. Sync is not a backup. Version-1 and version-2 snapshots are upgraded
-without changing existing progression playback. Older app versions cannot safely read version-3
-snapshots with picking patterns and must be updated rather than allowed to overwrite them.
+on another device and avoid editing the same item concurrently. The exact policy and its limits are
+in [sync conflict policy](docs/sync-conflicts.md). Unsupported or malformed cloud **and local**
+library data stop writes/sync rather than being silently discarded; the original local or cloud
+data are left in place. A note or progression draft stays tied to the account where it was started;
+if the account changes, switch back or copy the draft before starting over. Current FretHub tabs
+coordinate account changes and local edits through IndexedDB, and a write-ahead journal allows interrupted multi-key writes to be rolled back. If coordination or recovery
+is unavailable, writes fail rather than proceeding without the lock. This is not a substitute for a
+backup: storage failures can prevent recovery until storage is available again. Refresh or close **all**
+older app tabs after updating, because older clients do not participate in this coordination and can
+still interfere. Recent chords and practice quiz totals stay on the device rather than syncing. Clearing
+site data removes local copies and any recovery journal, including changes that have not synced; do so
+on shared devices after signing out if privacy matters. Sync is not a backup. Version-1 and version-2
+snapshots are upgraded without changing existing progression playback. Older app versions cannot safely
+read version-3 snapshots with picking patterns and must be updated rather than allowed to overwrite them.
+
+See [staging validation](docs/staging-validation.md) for the checks still required with real auth,
+email, devices and microphones, and [performance notes](docs/performance-notes.md) for the measured
+local baseline and its limitations.
 
 #### Configure production email
 

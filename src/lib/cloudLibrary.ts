@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { applyLibrarySnapshot, canonicalJson, emptySnapshot, getLibrarySnapshot, mergeLibrarySnapshots, normalizeSnapshot, type LibrarySnapshot } from '@core/storage';
+import { applySnapshotForSync, canonicalJson, emptySnapshot, readSnapshotForSync, mergeLibrarySnapshots, normalizeSnapshot, type LibrarySnapshot } from '@core/storage';
 
 const url = import.meta.env.VITE_SUPABASE_URL?.trim();
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
@@ -47,7 +47,8 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
         }
       }
     }
-    const merged = mergeLibrarySnapshots(remote, getLibrarySnapshot());
+    const merged = mergeLibrarySnapshots(remote, await readSnapshotForSync(userId));
+    if (!isCurrent()) return { dirty: false };
     if (!row || row.data.version !== 3 || canonical(merged) !== canonical(remote)) {
       if (!isCurrent()) return { dirty: false };
       if (!row) {
@@ -65,8 +66,7 @@ export async function syncLibrary(client: SupabaseClient, userId: string, isCurr
     if (!isCurrent()) return { dirty: false };
     // Keep edits made while the network request was in flight, and send them
     // on the next pass rather than overwriting them with the older response.
-    const latest = mergeLibrarySnapshots(merged, getLibrarySnapshot());
-    if (!applyLibrarySnapshot(latest)) throw new Error('Could not save the synced library on this device. Check browser storage and try again.');
+    const latest = await applySnapshotForSync(userId, merged);
     return { dirty: canonical(latest) !== canonical(merged) };
   }
   throw new Error('Your library changed on another device. Please try syncing again.');

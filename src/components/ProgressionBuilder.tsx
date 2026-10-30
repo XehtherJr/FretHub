@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import SaveProgressionDialog, { type GradeChoice } from './SaveProgressionDialog';
 import ProgressionPatternEditor, { type PatternMode } from './ProgressionPatternEditor';
+import UnsavedChangesGuard from './UnsavedChangesGuard';
 import { CHORD_TYPES } from '@core/chord-definitions';
 import { parseChordInput } from '@core/chordInput';
 import type { ChordMatch } from '@core/chord-identifier';
@@ -16,7 +17,7 @@ import {
   estimateProgressionDifficulty, progressionId, progressionMidi, searchReferenceShape,
   type ProgressionStep, type SavedProgression,
 } from '@core/userProgressions';
-import { deleteProgression, getProgressions, LIBRARY_CHANGE_EVENT, saveProgression } from '@core/storage';
+import { deleteProgression, getProgressions, getTabLibraryOwner, isLibraryWriteInProgress, libraryReadIssue, LIBRARY_CHANGE_EVENT, saveProgression } from '@core/storage';
 import { useLibrarySync } from '@/hooks/LibrarySync';
 
 interface Props {
@@ -54,8 +55,14 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   const [saveOpen, setSaveOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [saved, setSaved] = useState(getProgressions);
-  const [dirty, setDirty] = useState(false);
+  const readSaved = () => ({ items: getProgressions(), owner: getTabLibraryOwner() });
+  const [savedLibrary, setSavedLibrary] = useState(readSaved);
+  const saved = savedLibrary.items;
+  const [dirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const hasContent = useRef(false);
+  const draftOwner = useRef<string | null>(getTabLibraryOwner());
+  const setDirty = useCallback((value: boolean) => { dirtyRef.current = value; setDirtyState(value); }, []);
   const [playing, setPlaying] = useState(false);
   const [currentChord, setCurrentChord] = useState<number | null>(null);
   const [message, setMessage] = useState('');
@@ -109,7 +116,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     setPatternSelection(remapped);
   }, [patternTuning.strings.length, patternSelection, notify]);
   useEffect(() => {
-    const refresh = () => setSaved(getProgressions());
+    const refresh = () => { if (!isLibraryWriteInProgress()) setSavedLibrary(readSaved()); };
     window.addEventListener(LIBRARY_CHANGE_EVENT, refresh);
     window.addEventListener('storage', refresh);
     window.addEventListener('focus', refresh);
@@ -117,6 +124,9 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
   }, []);
 
   const load = useCallback((item: SavedProgression) => {
+    if (savedLibrary.owner === null || savedLibrary.owner !== getTabLibraryOwner()) { notify('The account changed. Review the saved progression list before loading.'); return; }
+    draftOwner.current = savedLibrary.owner;
+    hasContent.current = true;
     stop();
     setChords(item.chords.map((chord) => ({ ...chord, frets: [...chord.frets] })));
     setInstrument({ tuningId: item.tuningId, capo: item.capo });
@@ -134,7 +144,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     setDirty(false);
     onLoadShape(item.chords[0].frets, item.tuningId, item.capo);
     notify(`Loaded ${item.name}. Select a chord to edit it or add another.`);
-  }, [onLoadShape, stop, notify]);
+  }, [onLoadShape, stop, notify, setDirty, savedLibrary.owner]);
 
   useEffect(() => {
     if (!requestedId) { loadedRequest.current = null; return; }
@@ -147,9 +157,25 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     } else if (active) notify('That saved progression is not on this device yet. Sign in and sync, or choose another saved progression.');
   }, [requestedId, saved, load, active, dirty, editingIndex, pendingPatternSelection, notify]);
 
+  useEffect(() => {
+    const bindDraft = () => {
+      if (isLibraryWriteInProgress()) return;
+      const owner = getTabLibraryOwner();
+      if (!dirtyRef.current && !hasContent.current) draftOwner.current = owner;
+      // The first account explicitly adopts the device's guest library.
+      else if (draftOwner.current === '' && owner) draftOwner.current = owner;
+    };
+    bindDraft();
+    window.addEventListener(LIBRARY_CHANGE_EVENT, bindDraft);
+    window.addEventListener('storage', bindDraft);
+    return () => { window.removeEventListener(LIBRARY_CHANGE_EVENT, bindDraft); window.removeEventListener('storage', bindDraft); };
+  }, [dirty, chords.length]);
+
   const discardChanges = () => (!dirty && editingIndex < 0 && !pendingPatternSelection) || window.confirm('Discard unsaved changes to this progression?');
   const newProgression = () => {
     if (!discardChanges()) return;
+    draftOwner.current = getTabLibraryOwner();
+    hasContent.current = false;
     stop(); setChords([]); setInstrument(null); setTitle('My progression'); setTempoText('90');
     setLoop(false); setPatternMode('single'); setStepsPerBeat(2); setPatternText(''); setPatternSelection([]);
     setGradeChoice('auto'); setLabel(''); setLabelCurrentShape(false); setReference(null); setEditingId(null); setSavedId(null); setDirty(false);
@@ -182,6 +208,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     stop();
     const name = label.trim() || suggestion || 'Unnamed chord';
     if (name.length > 100) { notify('Chord names can be at most 100 characters.', 'neck'); return; }
+    hasContent.current = true;
     if (editingIndex >= 0) {
       setChords((current) => current.map((item) => item.id === editingId ? { ...item, name, frets: [...selectedFrets] } : item));
       notify(`Updated ${name}.`, 'neck');
@@ -199,6 +226,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     notify(`Editing ${item.name} on the neck. Update it or cancel editing.`, 'neck');
   };
   const updateChords = (next: ProgressionStep[]) => {
+    hasContent.current = next.length > 0;
     stop(); setChords(next); setDirty(true);
     if (!next.length) { setInstrument(null); setEditingId(null); }
   };
@@ -209,7 +237,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
     [next[index], next[target]] = [next[target], next[index]];
     updateChords(next);
   };
-  const save = (rawName: string, grade: GradeChoice): string | null => {
+  const save = async (rawName: string, grade: GradeChoice): Promise<string | null> => {
     if (!instrument || !chords.length || !validTempo || editingIndex >= 0) return 'Update or cancel the chord edit before saving.';
     if (pendingPatternSelection) return 'Add the selected strings as a step or clear the selection before saving.';
     if (!validPattern) return 'Fix the picking pattern before saving.';
@@ -221,7 +249,14 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
       difficultyMode: grade === 'auto' ? 'auto' : 'manual', chords,
       ...(playbackPattern ? { pattern: playbackPattern } : {}),
     };
-    if (!saveProgression(item)) return 'Could not save this progression on this device. Check browser storage and try again.';
+    const owner = draftOwner.current;
+    const changedAccount = 'The account changed while this draft was open. Switch back to its original account or copy the draft before starting over.';
+    if (owner === null) return 'The account was changing when this draft started. It cannot be safely assigned; copy the draft before starting over.';
+    const currentOwner = getTabLibraryOwner();
+    if (currentOwner === null) return 'The library is temporarily unavailable. Your draft is still here; wait or sign out and try again.';
+    if (currentOwner !== owner) return changedAccount;
+    if (!await saveProgression(item, owner)) return getTabLibraryOwner() !== owner ? changedAccount : libraryReadIssue() ?? 'Could not save this progression on this device. Check browser storage and try again.';
+    if (getTabLibraryOwner() !== owner) return `${changedAccount} It may have saved to the original account.`;
     setSavedId(item.id); setTitle(name); setGradeChoice(grade); setDirty(false);
     notify(sync.session ? 'Saved on this device; account sync will run automatically.' : 'Saved on this device. Sign in to sync it across devices.');
     return null;
@@ -245,6 +280,7 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
 
   return (
     <section className="progression-builder" aria-labelledby="progression-heading">
+      <UnsavedChangesGuard when={dirty || editingIndex >= 0 || pendingPatternSelection || saveOpen} message="Discard unsaved changes to this progression?" includeSearch />
       {active && actionSlot && createPortal(<>
         <button type="button" className="btn btn-primary btn-sm" disabled={distinctNotes.size < 2 || !compatible || chordNeedsLoading} onClick={addOrUpdate}>{editingIndex >= 0 ? `Update chord ${editingIndex + 1}` : 'Add selected chord'}</button>
         {editingIndex >= 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setEditingId(null); setLabel(''); notify('Editing cancelled.', 'neck'); }}>Cancel edit</button>}
@@ -319,9 +355,9 @@ export default function ProgressionBuilder({ active, tuningId, capo, selectedFre
             {saved.map((item) => (
               <li key={item.id}>
                 <div><strong>{item.name}</strong><small>{displayLevel(item.difficulty)} · {item.chords.length} {item.chords.length === 1 ? 'chord' : 'chords'} · {item.bpm} BPM</small></div>
-                <div className="row"><button type="button" className="btn btn-sm" onClick={() => { if (discardChanges()) load(item); }} aria-label={`Load ${item.name}`}>Load</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => {
+                <div className="row"><button type="button" className="btn btn-sm" onClick={() => { if (discardChanges()) load(item); }} aria-label={`Load ${item.name}`}>Load</button><button type="button" className="btn btn-sm btn-ghost" onClick={async () => {
                   if (!window.confirm(`Delete “${item.name}” from your library?`)) return;
-                  if (!deleteProgression(item.id)) { notify('Could not delete this progression on this device. Check browser storage and try again.'); return; }
+                  if (savedLibrary.owner === null || !await deleteProgression(item.id, savedLibrary.owner)) { notify(getTabLibraryOwner() !== savedLibrary.owner ? 'The account changed. Review the saved progression list before deleting.' : libraryReadIssue() ?? 'Could not delete this progression on this device. Check browser storage and try again.'); return; }
                   if (savedId === item.id) { setSavedId(null); setDirty(true); }
                   notify(`Deleted ${item.name}.`);
                 }} aria-label={`Delete ${item.name}`}>Delete</button></div>

@@ -70,7 +70,7 @@ export function prefetchGuitarSamples(): void {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
   // Respect a user's reduced-data preference; sound still loads on demand.
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-  if (connection?.saveData || connection?.effectiveType === '2g') return;
+  if (connection?.saveData || connection?.effectiveType === '2g' || connection?.effectiveType === 'slow-2g') return;
   SAMPLE_PITCHES.forEach((pitch) => { void fetchSample(pitch).catch(() => {}); });
 }
 

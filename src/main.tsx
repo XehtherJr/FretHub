@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
 import { prefetchGuitarSamples } from '@core/audio';
 import { LibrarySyncProvider } from '@/hooks/LibrarySync';
@@ -16,12 +16,12 @@ import './styles/theory-connections.css';
 // Fetch the local recordings after the interface has had a chance to render.
 window.setTimeout(prefetchGuitarSamples, 1500);
 
+const router = createBrowserRouter([{ path: '*', element: <App /> }]);
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <LibrarySyncProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </LibrarySyncProvider>
   </React.StrictMode>,
 );

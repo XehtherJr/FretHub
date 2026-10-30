@@ -1,6 +1,7 @@
+import { LIBRARY_FENCE_KEY } from '@core/libraryLock';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { getLibraryOwner, LIBRARY_CHANGE_EVENT, switchLibraryOwner } from '@core/storage';
+import { getLibraryOwner, getTabLibraryOwner, LIBRARY_CHANGE_EVENT, LIBRARY_JOURNAL_KEY, recoverLibrary, setLibraryAuthenticationPending, switchLibraryOwner } from '@core/storage';
 import { cloudClient, syncLibrary } from '@/lib/cloudLibrary';
 import { hasAuthMethod, accountCallbackUrl } from '@/lib/accountAuth';
 
@@ -40,7 +41,10 @@ export function LibrarySyncProvider({ children }: { children: ReactNode }) {
   const [recoveryUser, setRecoveryUser] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus>('idle');
   const [message, setMessage] = useState('');
+  // Bind this tab before children can read or edit a different account's data.
+  getTabLibraryOwner();
   const userId = useRef<string | null>(null);
+  const authGeneration = useRef(0);
   const active = useRef(true);
   const inFlight = useRef(false);
   const pending = useRef(false);
@@ -85,26 +89,38 @@ export function LibrarySyncProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     active.current = true;
+    void recoverLibrary().then((ok) => {
+      if (!ok && active.current) { setStatus('error'); setMessage('Could not recover local storage safely. Preserve your local data and check browser storage before trying again.'); }
+    });
     const client = cloudClient;
-    if (!client) return () => { active.current = false; };
+    if (!client) return () => { active.current = false; authGeneration.current++; };
     const receive = (event: string, next: Session | null) => {
       if (!active.current) return;
+      const generation = ++authGeneration.current;
       const nextId = next?.user.id ?? null;
-      // Invalidate an earlier account's in-flight sync before changing local data.
-      if (nextId !== userId.current) { userId.current = null; setRecoveryUser(null); }
+      // Invalidate in-flight sync immediately; ownership changes under the lock.
+      if (nextId !== userId.current) setRecoveryUser(null);
+      userId.current = null;
       if (event === 'PASSWORD_RECOVERY') setRecoveryUser(nextId);
       if (event === 'SIGNED_OUT') setRecoveryUser(null);
       setSession(next);
-      setAuthReady(true);
+      setAuthReady(!nextId);
       setMessage('');
-      if (nextId && !switchLibraryOwner(nextId)) {
-        setStatus('error');
-        setMessage('Could not safely switch libraries on this device. Check browser storage, then sign out and try again.');
-        return;
-      }
-      userId.current = nextId;
-      setStatus('idle');
-      if (nextId) schedule(0);
+      if (!nextId) { setLibraryAuthenticationPending(false); setStatus('idle'); return; }
+      setLibraryAuthenticationPending(true);
+      void switchLibraryOwner(nextId, () => active.current && authGeneration.current === generation).then((ok) => {
+        if (!active.current || authGeneration.current !== generation) return;
+        setAuthReady(true);
+        if (!ok) {
+          setStatus('error');
+          setMessage('Could not safely switch libraries on this device. Your data was not intentionally removed. Check browser storage or refresh all tabs and try again.');
+          return;
+        }
+        setLibraryAuthenticationPending(false);
+        userId.current = nextId;
+        setStatus('idle');
+        schedule(0);
+      });
     };
     // Supabase emits INITIAL_SESSION as well as subsequent auth changes.
     const { data: { subscription } } = client.auth.onAuthStateChange((event, next) => receive(event, next));
@@ -112,18 +128,22 @@ export function LibrarySyncProvider({ children }: { children: ReactNode }) {
       if ((event as CustomEvent<{ source?: string }>).detail?.source !== 'sync' && userId.current) schedule();
     };
     const onResume = () => { if (userId.current && document.visibilityState !== 'hidden') schedule(0); };
+    // Fences and journals change even for no-op syncs; treating those internal
+    // markers as edits would make tabs continuously trigger each other's sync.
+    const onStorage = (event: StorageEvent) => { if (event.key !== LIBRARY_FENCE_KEY && event.key !== LIBRARY_JOURNAL_KEY) onResume(); };
     window.addEventListener(LIBRARY_CHANGE_EVENT, onChange);
-    window.addEventListener('storage', onResume);
+    window.addEventListener('storage', onStorage);
     window.addEventListener('focus', onResume);
     window.addEventListener('online', onResume);
     document.addEventListener('visibilitychange', onResume);
     return () => {
       active.current = false;
+      authGeneration.current++;
       userId.current = null;
       subscription.unsubscribe();
       if (timer.current !== null) window.clearTimeout(timer.current);
       window.removeEventListener(LIBRARY_CHANGE_EVENT, onChange);
-      window.removeEventListener('storage', onResume);
+      window.removeEventListener('storage', onStorage);
       window.removeEventListener('focus', onResume);
       window.removeEventListener('online', onResume);
       document.removeEventListener('visibilitychange', onResume);

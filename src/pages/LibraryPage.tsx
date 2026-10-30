@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { getFavorites, getRecents, getNotes, getProgressions, RecentChord, LIBRARY_CHANGE_EVENT } from '@core/storage';
+import { getFavorites, getRecents, getNotes, getProgressions, libraryReadIssue, RecentChord, LIBRARY_CHANGE_EVENT } from '@core/storage';
 import { useLibrarySync } from '@/hooks/LibrarySync';
-import { buildChord } from '@core/chords';
+import { buildChord, type BuiltChord } from '@core/chords';
 import { chordPath } from '@/lib/urls';
 import { cloudClient } from '@/lib/cloudLibrary';
 import { readEmailVerification, type EmailVerification } from '@/lib/accountAuth';
@@ -11,12 +11,15 @@ import EmptyState from '@/components/EmptyState';
 interface FavoriteEntry {
   rootName: string;
   typeId: string;
+  chord: BuiltChord;
 }
 
 function parseKey(key: string): FavoriteEntry | null {
-  const [rootName, typeId] = key.split('|');
-  if (!rootName || !typeId) return null;
-  return { rootName, typeId };
+  const parts = key.split('|');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const [rootName, typeId] = parts;
+  try { return { rootName, typeId, chord: buildChord(rootName, typeId) }; }
+  catch { return null; }
 }
 
 export default function LibraryPage() {
@@ -98,11 +101,19 @@ export default function LibraryPage() {
     };
   }, []);
 
-  const favorites = getFavorites().map(parseKey).filter((x): x is FavoriteEntry => x !== null);
-  const recents: RecentChord[] = getRecents();
+  const rawFavorites = getFavorites();
+  const favorites = rawFavorites.map(parseKey).filter((x): x is FavoriteEntry => x !== null);
+  const rawRecents = getRecents();
+  const recents: { recent: RecentChord; entry: FavoriteEntry }[] = rawRecents.flatMap((recent) => {
+    const entry = parseKey(`${recent.rootName}|${recent.typeId}`);
+    return entry ? [{ recent, entry }] : [];
+  });
   const notes = getNotes();
   const progressions = getProgressions();
-  const noteEntries = Object.keys(notes).map(parseKey).filter((x): x is FavoriteEntry => x !== null);
+  const noteKeys = Object.keys(notes);
+  const noteEntries = noteKeys.map(parseKey).filter((x): x is FavoriteEntry => x !== null);
+  const hiddenChords = rawFavorites.length - favorites.length + rawRecents.length - recents.length + noteKeys.length - noteEntries.length;
+  const issue = libraryReadIssue();
   void tick;
 
   return (
@@ -113,6 +124,8 @@ export default function LibraryPage() {
         Save chords and notes without an account. They stay in this browser unless you choose to sync them.
         Clearing site data removes this device’s local copy.
       </p>
+      {issue && <p role="alert">{issue}</p>}
+      {hiddenChords > 0 && <p role="status">Some saved chord records could not be displayed by this version. They remain on this device and have not been deleted.</p>}
 
       <section id="account" className="library-account" aria-label="Optional account and sync">
         <div>
@@ -193,8 +206,7 @@ export default function LibraryPage() {
           </EmptyState>
         ) : (
           <div className="grid grid-3">
-            {favorites.map(({ rootName, typeId }) => {
-              const chord = buildChord(rootName, typeId);
+            {favorites.map(({ rootName, typeId, chord }) => {
               return (
                 <Link key={`${rootName}-${typeId}`} to={chordPath(rootName, typeId)} className="card feature-card">
                   <h3 style={{ marginBottom: '0.3rem' }}>{chord.shortName}</h3>
@@ -219,8 +231,7 @@ export default function LibraryPage() {
                 <tr><th>Chord</th><th>Family</th><th>Last viewed</th></tr>
               </thead>
               <tbody>
-                {recents.slice(0, 10).map((r) => {
-                  const chord = buildChord(r.rootName, r.typeId);
+                {recents.slice(0, 10).map(({ recent: r, entry: { chord } }) => {
                   return (
                     <tr key={r.key}>
                       <td><Link to={chordPath(r.rootName, r.typeId)}><strong>{r.shortName}</strong></Link></td>
@@ -241,8 +252,7 @@ export default function LibraryPage() {
           <p className="muted">Use the notes box on any chord page to jot down practice reminders.</p>
         ) : (
           <div className="grid grid-2">
-            {noteEntries.map(({ rootName, typeId }) => {
-              const chord = buildChord(rootName, typeId);
+            {noteEntries.map(({ rootName, typeId, chord }) => {
               return (
                 <Link key={`${rootName}-${typeId}`} to={chordPath(rootName, typeId)} className="card feature-card">
                   <h3 style={{ marginBottom: '0.3rem' }}>{chord.shortName}</h3>

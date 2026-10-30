@@ -20,6 +20,24 @@ describe('acoustic guitar sample bank', () => {
   });
 });
 
+describe('reduced-data audio prefetch', () => {
+  it.each([{ effectiveType: 'slow-2g' }, { effectiveType: '2g' }, { saveData: true }])('does not prefetch on %j', async (connection) => {
+    const original = Object.getOwnPropertyDescriptor(navigator, 'connection');
+    const fetch = vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+    vi.stubGlobal('fetch', fetch);
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: connection });
+    try {
+      const { prefetchGuitarSamples } = await import('./audio');
+      prefetchGuitarSamples();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      if (original) Object.defineProperty(navigator, 'connection', original);
+      else delete (navigator as Navigator & { connection?: unknown }).connection;
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('scheduled guitar sequences', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.resetModules(); });
 

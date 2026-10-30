@@ -52,12 +52,81 @@ describe('microphone input lifecycle', () => {
   });
 
   it('does not claim to be listening if audio processing cannot resume', async () => {
-    const track = { stop: vi.fn() };
+    const track = new EventTarget() as EventTarget & { stop: ReturnType<typeof vi.fn> };
+    track.stop = vi.fn();
+    const resume = vi.fn().mockRejectedValue(new Error('blocked'));
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track] }) } });
-    vi.mocked(getAudioContext).mockReturnValue({ state: 'suspended', resume: vi.fn().mockRejectedValue(new Error('blocked')) } as unknown as AudioContext);
+    vi.mocked(getAudioContext).mockReturnValue({ state: 'suspended', resume } as unknown as AudioContext);
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unavailable'));
+    expect(resume).toHaveBeenCalledOnce();
     expect(track.stop).toHaveBeenCalledOnce();
   });
+  it.each(['stop', 'unmount'] as const)('stops acquired tracks immediately on %s while resume is pending, even if resume later rejects', async (cancel) => {
+    const track = new EventTarget() as EventTarget & { stop: ReturnType<typeof vi.fn> };
+    track.stop = vi.fn();
+    let rejectResume!: (error: Error) => void;
+    const resume = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectResume = reject; }));
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track] }) } });
+    vi.mocked(getAudioContext).mockReturnValue({ state: 'suspended', resume } as unknown as AudioContext);
+    const view = render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(resume).toHaveBeenCalledOnce());
+    if (cancel === 'stop') fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    else view.unmount();
+    expect(track.stop).toHaveBeenCalledOnce();
+    await act(async () => { rejectResume(new Error('resume rejected')); });
+    expect(track.stop).toHaveBeenCalledOnce();
+    if (cancel === 'stop') expect(screen.getByTestId('status')).toHaveTextContent('idle');
+  });
+
+  it('disconnects partially created audio nodes and stops tracks when setup throws', async () => {
+    const track = new EventTarget() as EventTarget & { stop: ReturnType<typeof vi.fn> };
+    track.stop = vi.fn();
+    const source = { connect: vi.fn(() => { throw new Error('connect failed'); }), disconnect: vi.fn() };
+    const analyser = { fftSize: 0, disconnect: vi.fn() };
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track] }) } });
+    vi.mocked(getAudioContext).mockReturnValue({ state: 'running', createMediaStreamSource: () => source, createAnalyser: () => analyser } as unknown as AudioContext);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('unavailable'));
+    expect(source.disconnect).toHaveBeenCalledOnce();
+    expect(analyser.disconnect).toHaveBeenCalledOnce();
+    expect(track.stop).toHaveBeenCalledOnce();
+  });
+
+  it('stops a stream that arrives after cancellation without starting audio', async () => {
+    let resolveStream!: (stream: { getTracks: () => unknown[] }) => void;
+    const track = { stop: vi.fn() };
+    const getUserMedia = vi.fn(() => new Promise((resolve) => { resolveStream = resolve; }));
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+    const createSource = vi.fn();
+    vi.mocked(getAudioContext).mockReturnValue({ state: 'running', createMediaStreamSource: createSource } as unknown as AudioContext);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    await act(async () => { resolveStream({ getTracks: () => [track] }); });
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(createSource).not.toHaveBeenCalled();
+    expect(screen.getByTestId('status')).toHaveTextContent('idle');
+  });
+
+  it('releases an existing stream if a later start is unsupported', async () => {
+    const track = new EventTarget() as EventTarget & { stop: ReturnType<typeof vi.fn> };
+    track.stop = vi.fn();
+    const source = { connect: vi.fn(), disconnect: vi.fn() };
+    const analyser = { fftSize: 0, disconnect: vi.fn() };
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track] }) } });
+    vi.mocked(getAudioContext).mockReturnValue({ state: 'running', createMediaStreamSource: () => source, createAnalyser: () => analyser } as unknown as AudioContext);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('listening'));
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} });
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(screen.getByTestId('status')).toHaveTextContent('unsupported');
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(source.disconnect).toHaveBeenCalledOnce();
+  });
+
 });

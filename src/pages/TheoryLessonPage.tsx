@@ -91,7 +91,7 @@ function Block({ block }: { block: LessonBlock }) {
 
 export default function TheoryLessonPage() {
   const { lessonId } = useParams();
-  const lesson = getLesson(decodeURIComponent(lessonId ?? ''));
+  const lesson = getLesson(lessonId ?? ''); // Route parameters are already decoded.
 
   if (!lesson) {
     return (

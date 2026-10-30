@@ -14,11 +14,11 @@ export default function LessonChallenge({ lessonId }: { lessonId: string }) {
   }, [lessonId]);
   if (!challenge) return null;
   const correct = choice === challenge.answer;
-  const answer = (index: number) => {
+  const answer = async (index: number) => {
     setChoice(index);
     setSaveFailed(false);
     if (index === challenge.answer) {
-      const saved = markLessonComplete(lessonId);
+      const saved = await markLessonComplete(lessonId);
       setCompleted(saved);
       setSaveFailed(!saved);
     }

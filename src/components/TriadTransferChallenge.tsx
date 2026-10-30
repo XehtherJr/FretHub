@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BuiltChord } from '@core/chords';
 import { intervalSemitones } from '@core/intervals';
 import { fretToMidi, pcToNote } from '@core/notes';
@@ -24,6 +24,9 @@ export default function TriadTransferChallenge({ chord, tuning, capo, fretCount 
   const [rootFret, setRootFret] = useState<number | null>(null);
   const [rootHint, setRootHint] = useState(false);
   const [saved, setSaved] = useState(() => getCompletedLessons().includes(TRIAD_TRANSFER_ID));
+  const [saving, setSaving] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     const refresh = () => setSaved(getCompletedLessons().includes(TRIAD_TRANSFER_ID));
     window.addEventListener(LIBRARY_CHANGE_EVENT, refresh);
@@ -94,7 +97,10 @@ export default function TriadTransferChallenge({ chord, tuning, capo, fretCount 
     }
     setCorrect(true);
     setFeedback(`Yes — ${task.third.name} is the ${task.third.intervalName} of ${activeChord.rootName}, ${distance} semitones above the root. The same relationship works in every register.`);
-    if (step === 2) setSaved(markLessonComplete(TRIAD_TRANSFER_ID));
+    if (step === 2) {
+      setSaving(true);
+      void markLessonComplete(TRIAD_TRANSFER_ID).then((ok) => { if (mounted.current) { setSaved(ok); setSaving(false); } });
+    }
   };
 
   return <section className="triad-practice" aria-labelledby="transfer-heading">
@@ -113,7 +119,7 @@ export default function TriadTransferChallenge({ chord, tuning, capo, fretCount 
       <p className="small faint">Use arrow keys to move between positions and Enter or Space to choose. Open means at the capo when one is fitted.</p>
       {feedback && <p className={`triad-task-feedback ${correct || feedback.startsWith('Yes') ? 'correct' : ''}`} role="status">{feedback}</p>}
       {correct && step === 1 && <button type="button" className="btn btn-primary btn-sm" onClick={() => { setStep(2); setCorrect(false); setFeedback(''); resetGuide(); }}>Try another key →</button>}
-      {correct && step === 2 && <div className="triad-task-finish"><p>Two keys explored. {saved ? 'This is saved as an application challenge—not a claim of mastery.' : 'Progress could not be saved on this device. Check browser storage and try again.'}</p><button type="button" className="btn btn-sm" onClick={() => { setStep(1); setCorrect(false); setFeedback(''); resetGuide(); }}>Try again</button></div>}
+      {correct && step === 2 && <div className="triad-task-finish"><p>Two keys explored. {saving ? 'Saving progress…' : saved ? 'This is saved as an application challenge—not a claim of mastery.' : 'Progress could not be saved on this device. Check browser storage and try again.'}</p><button type="button" className="btn btn-sm" onClick={() => { setStep(1); setCorrect(false); setFeedback(''); resetGuide(); }}>Try again</button></div>}
     </> : <p className="muted">No root-to-third path fits these settings. Try more frets or a different tuning or capo.</p>}
   </section>;
 }

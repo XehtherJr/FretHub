@@ -6,7 +6,7 @@ interface Props {
   name: string;
   grade: GradeChoice;
   estimate: { level: ProgressionDifficulty; reasons: string[] };
-  onSave: (name: string, grade: GradeChoice) => string | null;
+  onSave: (name: string, grade: GradeChoice) => Promise<string | null>;
   onClose: () => void;
 }
 
@@ -17,6 +17,7 @@ export default function SaveProgressionDialog({ name, grade, estimate, onSave, o
   const [draftName, setDraftName] = useState(name);
   const [draftGrade, setDraftGrade] = useState<GradeChoice>(grade);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
 
@@ -38,15 +39,20 @@ export default function SaveProgressionDialog({ name, grade, estimate, onSave, o
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const result = onSave(draftName, draftGrade);
-    if (result) setError(result);
-    else onClose();
+    if (saving) return;
+    setSaving(true);
+    try {
+      const result = await onSave(draftName, draftGrade);
+      if (result) setError(result);
+      else onClose();
+    } catch { setError('Could not save this progression on this device. Please try again.'); }
+    finally { setSaving(false); }
   };
 
   return (
-    <dialog ref={dialog} className="save-progression-dialog" aria-labelledby="save-progression-heading" onKeyDown={keepFocusInside} onCancel={(event) => { event.preventDefault(); onClose(); }}>
+    <dialog ref={dialog} className="save-progression-dialog" aria-labelledby="save-progression-heading" onKeyDown={keepFocusInside} onCancel={(event) => { event.preventDefault(); if (!saving) onClose(); }}>
       <form onSubmit={submit}>
         <h2 id="save-progression-heading">Save progression</h2>
         <p className="small muted">Name your sequence and choose a difficulty. You can change both later.</p>
@@ -54,7 +60,7 @@ export default function SaveProgressionDialog({ name, grade, estimate, onSave, o
         <div className="field"><label htmlFor="progression-grade">Difficulty</label><select id="progression-grade" value={draftGrade} onChange={(event) => setDraftGrade(event.target.value as GradeChoice)}><option value="auto">Automatic estimate</option>{DIFFICULTY_LEVELS.map((level) => <option key={level} value={level}>{titleCase(level)}</option>)}</select></div>
         <p className="small muted">{draftGrade === 'auto' ? 'Estimated' : 'Your label'}: <strong>{titleCase(draftGrade === 'auto' ? estimate.level : draftGrade)}</strong>. The estimate considers fingering, position changes and tempo ({estimate.reasons.join('; ')}); it is not a guarantee of playability and does not grade picking-pattern coordination.</p>
         {error && <p role="alert" className="small">{error}</p>}
-        <div className="save-progression-actions"><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" className="btn btn-primary">Save progression</button></div>
+        <div className="save-progression-actions"><button type="button" className="btn" disabled={saving} onClick={onClose}>Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save progression'}</button></div>
       </form>
     </dialog>
   );
